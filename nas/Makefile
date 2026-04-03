@@ -18,3 +18,5 @@ nasgr.o:			nasgr.cc naslex.hh nas.hh
 nas.o:				nas.cc naslex.hh nasgr.hh nas.hh
 				g++ -g3 -O0 -std=c++20 -c nas.cc
 
+clean:
+				rm *.o nasgr.cc nasgr.hh nasgr.output naslex.cc naslex.hh nas
