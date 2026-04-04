@@ -1,3 +1,6 @@
+#include <cstring>
+#include <format>
+
 #include "nasgr.hh"
 #include "naslex.hh"
 
@@ -107,37 +110,60 @@ namespace nas {
 	}
     }
 
+    class Lexer: public nasyy::Lexer {
+        public:
+            nas::Source&	src;
+
+        public:
+			Lexer(nas::Source& s): src(s), nasyy::Lexer()		{ };
+
+	    virtual int wrap(void)
+	    {
+		if(src.eof())
+		    return 1;
+		in(src.readline());
+		return in().good()? 0: 1;
+	    };
+    };
+
+    bool parser(Source& src, int arg, int argc, const char** argv)
+    {
+	Lexer		lexer(src);
+	nasyy::parser	parse(src.current, lexer);
+	bool		first = true;
+
+	// Fake inputfile to report errors
+	InputFile* ifile = &src.files.emplace_back(InputFile{"<command line>", 0, nullptr});
+
+	while(arg < argc) {
+	    if(src.setup(argv[arg++])) {
+		if(first)
+		    lexer.in(src.readline());
+		else
+		    lexer.wrap();
+		first = false;
+		while(!src.eof())
+		    if(parse.parse())
+			return false;
+	    } else {
+		SourceLine& sl = src.lines.emplace_back(SourceLine{ifile, 0, ""});
+	        sl.errs.emplace_back(SourceLine::Error{ size_t(arg), size_t(arg),
+			std::format("Unable to read file '{}': {}", argv[argc-1], std::strerror(errno))
+		});
+		return false;
+	    }
+	}
+	return true;
+    };
+
 };
 
-class Lexer: public nasyy::Lexer {
-    public:
-        nas::Source&	src;
+nas::Source src;
 
-    public:
-			Lexer(nas::Source& s): src(s), nasyy::Lexer(s.readline())	{ };
-
-        virtual int wrap(void)
-        {
-	    if(src.eof())
-		return 1;
-	    in(src.readline());
-	    return in().good()? 0: 1;
-        };
-
-};
-
-int main(int, const char**)
+int main(int argc, const char** argv)
 {
-    nas::Source		src;
 
-    if(!src.setup("kernel.ns"))
-	return 1;
+    nas::parser(src, 1, argc, argv);
 
-    Lexer		lexer(src);
-    nasyy::parser	parser(src.current, lexer);
-
-    while(!src.eof()) {
-	parser.parse();
-    }
 }
 
