@@ -7,8 +7,14 @@
 #include <stack>
 #include <sstream>
 
+#ifndef NAS_PARSER_HH
+#define NAS_PARSER_HH
+
+
 namespace nas {
 
+    class InputFile;
+    class SourceLine;
     class InputFile;
 
     struct Loc {
@@ -78,26 +84,12 @@ namespace nas {
 	    int64_t			val(void) const					{ return ptr->val_; };
 
 	    static void			clear(void)					{ nodes.clear(); };
+	    std::string			debug(void) const;
     };
 
     struct ParseError {
 	Loc		loc;
 	std::string	msg;
-    };
-
-    struct SourceLine {
-	struct Error {
-	    size_t		    from;
-	    size_t		    to;
-	    std::string		    msg;
-	};
-	InputFile*		file;
-	size_t			line;
-	std::string		text;
-	std::vector<Error>	errs;
-	std::string		label;
-	std::string		op;
-	std::vector<Node>	operands;
     };
 
     struct LineContext {
@@ -115,6 +107,26 @@ namespace nas {
 	FILE*			fd;
     };
 
+    struct SourceLine {
+	struct Error {
+	    size_t		    from;
+	    size_t		    to;
+	    std::string		    msg;
+	};
+	InputFile*		file;
+	size_t			line;
+	std::string		text;
+	std::vector<Error>	errs;
+	std::string		label;
+	std::string		op;
+	std::vector<Node>	operands;
+
+				SourceLine(InputFile* i, size_t ln, const std::string& t):
+					file(i), line(ln), text(t)				{ };
+
+	void			debug(void);
+    };
+
     struct Source {
 	std::vector<InputFile>	files;
 	std::vector<SourceLine>	lines;
@@ -125,5 +137,11 @@ namespace nas {
 	bool			eof(void);
 	const char*		readline(void);
     };
+
+    bool parser(Source& src, int arg, int argc, const char** argv);
+
 };
+
+
+#endif // double inclusion
 

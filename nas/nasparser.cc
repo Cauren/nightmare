@@ -3,6 +3,8 @@
 
 #include "nasgr.hh"
 #include "naslex.hh"
+#include "nasparser.hh"
+#include "nasasm.hh"
 
 namespace nas {
 
@@ -23,6 +25,28 @@ namespace nas {
 	return *const_cast<Node*>(this);
     }
 
+    std::string Node::debug(void) const
+    {
+	if(!ptr)
+	    return "[nil]";
+
+	static const char* tname[] = {
+		"Nil", "Error",
+		"Value",
+		"Address", "Seg", "Binary", "Unary", "String", "Register", "Ibase", "Index", "EA", "List", "Line", "Size",
+	};
+
+
+	std::string out = std::format("[{}: {}", tname[ptr->t_], ptr->val_);
+	if(ptr->str_.length())
+	    out += std::format(" \"{}\"", ptr->str_);
+	if(ptr->nodes_.size())
+	    for(const auto& nn: ptr->nodes_)
+		out += std::format(",{}", nn.debug());
+	out += "]";
+	return out;
+    }
+
     std::ostream& operator << (std::ostream& os, const Loc& l)
     {
 	os << (l.file? "filename": "(stream)") << ":" << l.begin.line << ":";
@@ -30,6 +54,17 @@ namespace nas {
 	if(l.end.column > l.begin.column)
 	    os << "-" << l.end.column;
 	return os;
+    }
+
+    void SourceLine::debug(void)
+    {
+	std::cout << line << " > ";
+	if(label.length())
+	    std::cout << label << ": ";
+	std::cout << op << " ";
+	for(const auto& nn: operands)
+	    std::cout << nn.debug() << " ";
+	std::cout << std::endl;
     }
 
     bool Source::setup(const char* fname)
@@ -89,6 +124,7 @@ namespace nas {
 	    s->errs.emplace_back(SourceLine::Error{pe.loc.begin.column, pe.loc.end.column, std::move(pe.msg)});
 	if(!n)
 	    return;
+	// std::cout << n.debug() << std::endl;
 	if(n == Node::Line) {
 	    if(n.size()>0 && n[0])
 		s->label = n[0].str();
@@ -99,13 +135,6 @@ namespace nas {
 		    s->operands = std::move(n[2].nlist());
 		else
 		    s->operands.emplace_back(std::move(n[2]));
-	    }
-	    if(!s->op.empty()) {
-	        std::cout << "--- Line " << s->line << ":";
-	        if(!s->label.empty())
-		    std::cout << " label:" << s->label;
-		std::cout << " op:" << s->op;
-		std::cout << " operands:" << s->operands.size() << std::endl;
 	    }
 	}
     }
@@ -158,12 +187,4 @@ namespace nas {
 
 };
 
-nas::Source src;
-
-int main(int argc, const char** argv)
-{
-
-    nas::parser(src, 1, argc, argv);
-
-}
 

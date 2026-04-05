@@ -45,6 +45,7 @@ reset_vec:
 		mov	#symbol,d2
 		mov	d3,segmap
 		jsr	lib:function
+someplace	equ	.+4
 		lda	_root:segmap,a3
 		add	a3:4,d1
 		lds	trapmap,a0
