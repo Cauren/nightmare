@@ -1,37 +1,17 @@
 
 #include <format>
 #include <iostream>
+#include <vector>
+#include <map>
+#include <utility>
 
 #include "nasparser.hh"
-#include "nas.hh"
+
 
 using nas::SourceLine;
 
+
 struct Opcode;
-
-struct Code {
-    typedef bool (Code::* Handler)(const Opcode&, const SourceLine&);
-
-    bool		equ_handler(const Opcode&, const SourceLine&);
-    bool		seg_handler(const Opcode&, const SourceLine&);
-    bool		org_handler(const Opcode&, const SourceLine&);
-    bool		data_handler(const Opcode&, const SourceLine&);
-    bool		db_handler(const Opcode&, const SourceLine&);
-    bool		da_handler(const Opcode&, const SourceLine&);
-    bool		ead_handler(const Opcode&, const SourceLine&);
-    bool		unary_handler(const Opcode&, const SourceLine&);
-    bool		addr_handler(const Opcode&, const SourceLine&);
-    bool		immed_handler(const Opcode&, const SourceLine&);
-    bool		eaa_handler(const Opcode&, const SourceLine&);
-    bool		aea_handler(const Opcode&, const SourceLine&);
-    bool		reglist_handler(const Opcode&, const SourceLine&);
-};
-
-struct Opcode {
-    const char* const	opcode;
-    Code::Handler	handler;
-    int32_t		bits;
-};
 
 struct Segment {
     enum Type {
@@ -53,10 +33,34 @@ struct Symbol {
 };
 
 struct Assembly {
-    std::vector<Segment>	segs;
-    std::map<std::string,Symbol>syms;
+    std::vector<Segment>		segs;
+    std::map<std::string,Symbol>	syms;
 };
 
+
+struct Code {
+    typedef bool (Code::* Handler)(const Opcode&, const SourceLine&);
+
+    bool			equ_handler(const Opcode&, const SourceLine&);
+    bool			seg_handler(const Opcode&, const SourceLine&);
+    bool			org_handler(const Opcode&, const SourceLine&);
+    bool			data_handler(const Opcode&, const SourceLine&);
+    bool			db_handler(const Opcode&, const SourceLine&);
+    bool			da_handler(const Opcode&, const SourceLine&);
+    bool			ead_handler(const Opcode&, const SourceLine&);
+    bool			unary_handler(const Opcode&, const SourceLine&);
+    bool			addr_handler(const Opcode&, const SourceLine&);
+    bool			immed_handler(const Opcode&, const SourceLine&);
+    bool			eaa_handler(const Opcode&, const SourceLine&);
+    bool			aea_handler(const Opcode&, const SourceLine&);
+    bool			reglist_handler(const Opcode&, const SourceLine&);
+};
+
+struct Opcode {
+    const char* const		opcode;
+    Code::Handler		handler;
+    int32_t			bits;
+};
 
 static const Opcode opcodes[] = {
 	{ "SEG",	&Code::seg_handler },

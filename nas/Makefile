@@ -15,10 +15,10 @@ naslex.o:			naslex.cc nasgr.hh nasparser.hh
 nasgr.o:			nasgr.cc naslex.hh nasparser.hh
 				g++ -g3 -std=c++20 -c nasgr.cc
 
-nasparser.o:			nasparser.cc naslex.hh nasgr.hh nasparser.hh nas.hh
+nasparser.o:			nasparser.cc naslex.hh nasgr.hh nasparser.hh
 				g++ -g3 -O0 -std=c++20 -c nasparser.cc
 
-nas.o:				nas.cc naslex.hh nasgr.hh nasparser.hh nas.hh
+nas.o:				nas.cc naslex.hh nasgr.hh nasparser.hh
 				g++ -g3 -O0 -std=c++20 -c nas.cc
 
 clean:

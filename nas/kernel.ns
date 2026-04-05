@@ -3,6 +3,7 @@
 lib		seg	"library.so"
 _root		seg	0
 
+Téµl		equ	1234
 
 		seg	_root
 		org	0

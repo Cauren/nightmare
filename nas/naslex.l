@@ -40,7 +40,7 @@ typedef nas::Loc location;
 
 	    utf8proc_ssize_t dlen;
 	    while((dlen = utf8proc_decompose((utf8proc_uint8_t*)txt, len, utf32, utf32_buflen,
-			utf8proc_option_t(UTF8PROC_COMPAT|UTF8PROC_IGNORE))) > utf32_buflen) {
+			utf8proc_option_t(UTF8PROC_COMPAT|UTF8PROC_IGNORE|UTF8PROC_DECOMPOSE))) > utf32_buflen) {
 		delete[] utf32;
 		utf32 = new utf8proc_int32_t[utf32_buflen = (dlen+255)&~255];
 	    }
