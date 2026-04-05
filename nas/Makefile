@@ -1,7 +1,7 @@
 
 
-nas:				nasparser.o nasgr.o naslex.o nasasm.o
-				g++ -g3 -O0 -std=c++20 -o nas nasparser.o nasgr.o naslex.o nasasm.o -lreflex -lutf8proc
+nas:				nasparser.o nasgr.o naslex.o nas.o
+				g++ -g3 -O0 -std=c++20 -o nas nasparser.o nasgr.o naslex.o nas.o -lreflex -lutf8proc
 
 nasgr.cc nasgr.hh:		nasgr.y
 				bison nasgr.y
@@ -15,11 +15,11 @@ naslex.o:			naslex.cc nasgr.hh nasparser.hh
 nasgr.o:			nasgr.cc naslex.hh nasparser.hh
 				g++ -g3 -std=c++20 -c nasgr.cc
 
-nasparser.o:			nasparser.cc naslex.hh nasgr.hh nasparser.hh nasasm.hh
+nasparser.o:			nasparser.cc naslex.hh nasgr.hh nasparser.hh nas.hh
 				g++ -g3 -O0 -std=c++20 -c nasparser.cc
 
-nasasm.o:			nasasm.cc naslex.hh nasgr.hh nasparser.hh nasasm.hh
-				g++ -g3 -O0 -std=c++20 -c nasasm.cc
+nas.o:				nas.cc naslex.hh nasgr.hh nasparser.hh nas.hh
+				g++ -g3 -O0 -std=c++20 -c nas.cc
 
 clean:
 				rm *.o nasgr.cc nasgr.hh nasgr.output naslex.cc naslex.hh nas

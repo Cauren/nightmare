@@ -4,7 +4,7 @@
 #include "nasgr.hh"
 #include "naslex.hh"
 #include "nasparser.hh"
-#include "nasasm.hh"
+#include "nas.hh"
 
 namespace nas {
 
