@@ -1,0 +1,8 @@
+*.swp
+*.o
+nasgr.cc
+nasgr.hh
+nasgr.output
+naslex.cc
+naslex.hh
+nas
