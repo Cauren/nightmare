@@ -42,7 +42,11 @@
     { \
 	if(N) { \
 	    (Cur) = YYRHSLOC(Rhs, 1); \
-	    (Cur).end = YYRHSLOC(Rhs, N).end; \
+	    if(YYRHSLOC(Rhs,N).end.line != YYRHSLOC(Rhs,N).begin.line) { \
+	        (Cur).end = YYRHSLOC(Rhs, N).begin; \
+	    } else { \
+	        (Cur).end = YYRHSLOC(Rhs, N).end; \
+	    } \
 	} else { \
 	    (Cur) = YYRHSLOC(Rhs, 0); \
 	    (Cur).begin = (Cur).end; \
@@ -182,6 +186,8 @@ operands		: src_ea ',' DREG				{ $$ = Ml(List, $1, $3); }
 			| src_ea SIZE					{ $$ = Ml(List, $1.add($2)); }
 			| abslist
 			| reglist
+			| '>' absolute					{ $$ = $2.add(Mi(Size, 3)); }
+			| '<' absolute					{ $$ = $2.add(Mi(Size, 1)); }
 			| %empty					{ $$ = nullptr; }
 			;
 

@@ -6,16 +6,17 @@
 #include <vector>
 #include <stack>
 #include <sstream>
+#include <format>
 
 #ifndef NAS_PARSER_HH
 #define NAS_PARSER_HH
 
 
+class Instruction;
 namespace nas {
 
     class InputFile;
     class SourceLine;
-    class InputFile;
 
     struct Loc {
 	InputFile*	file;
@@ -31,12 +32,12 @@ namespace nas {
 	public:
 	    enum Type {
 		Nil, Error,
-		Value,
+		Value, StringLit,
 		Address, Seg, Binary, Unary, String, Register, Ibase, Index, EA, List, Line, Size,
 	    };
 
 	    enum EAType {
-		Immed, DRreg, PostInc, PreDec, Indirect, PreIndex, PostIndex,
+		Invalid, Immed, DRreg, PostInc, PreDec, Indirect, PreIndex, PostIndex,
 	    };
 
 	private:
@@ -77,7 +78,12 @@ namespace nas {
 	    bool			operator == (Node::Type t) const		{ return ptr && ptr->t_==t; };
 	    bool			operator == (Node::EAType t) const		{ return ptr && ptr->ea_==t; };
 
-	    size_t			size(void) const				{ return ptr->nodes_.size(); };
+	    size_t			begin(void) const				{ return ptr? ptr->loc_.begin.column: 0; };
+	    size_t			end(void) const					{ return ptr? ptr->loc_.end.column: 0; };
+
+	    Type			type(void) const				{ return ptr? ptr->t_: Nil; };
+	    EAType			eatype(void) const				{ return ptr? ptr->ea_: Invalid; };
+	    size_t			size(void) const				{ return ptr? ptr->nodes_.size(): 0; };
 	    Node&			operator [] (size_t i) const			{ return ptr->nodes_[i]; };
 	    std::vector<Node>&		nlist(void) const				{ return ptr->nodes_; };
 	    std::string&		str(void) const					{ return ptr->str_; };
@@ -108,23 +114,38 @@ namespace nas {
     };
 
     struct SourceLine {
-	struct Error {
-	    size_t		    from;
-	    size_t		    to;
+	struct Pos {
+	    size_t		    from = 0;
+	    size_t		    to = 0;
+	};
+	struct Error: Pos {
 	    std::string		    msg;
 	};
 	InputFile*		file;
 	size_t			line;
 	std::string		text;
+	Instruction*		insn = nullptr;
 	std::vector<Error>	errs;
-	std::string		label;
-	std::string		op;
+	bool			fatal = false;
+	Node			entire = nullptr;
+	Node			label = nullptr;
+	Node			op = nullptr;
 	std::vector<Node>	operands;
 
 				SourceLine(InputFile* i, size_t ln, const std::string& t):
 					file(i), line(ln), text(t)				{ };
 
+	bool			err(const Node& n, std::string&& s) {
+				    errs.emplace_back( Error{ n? n.begin(): 0, n? n.end(): 0, std::move(s) } );
+				    return true;
+				};
+	template<typename... Args>
+	bool			err(const Node& n, std::format_string<Args...> fmt, Args&&... args) {
+				    return err(n, std::format(fmt, std::forward<Args>(args)...));
+				};
+
 	void			debug(void);
+	void			print(bool);
     };
 
     struct Source {
@@ -138,7 +159,7 @@ namespace nas {
 	const char*		readline(void);
     };
 
-    bool parser(Source& src, int arg, int argc, const char** argv);
+    bool parser(Source& src, int argc, const char** argv);
 
 };
 

@@ -31,8 +31,8 @@ namespace nas {
 
 	static const char* tname[] = {
 		"Nil", "Error",
-		"Value",
-		"Address", "Seg", "Binary", "Unary", "String", "Register", "Ibase", "Index", "EA", "List", "Line", "Size",
+		"Value", "String",
+		"Address", "Seg", "Binary", "Unary", "Ident", "Register", "Ibase", "Index", "EA", "List", "Line", "Size",
 	};
 
 
@@ -42,6 +42,7 @@ namespace nas {
 	if(ptr->nodes_.size())
 	    for(const auto& nn: ptr->nodes_)
 		out += std::format(",{}", nn.debug());
+	out += std::format("<{}-{}>", ptr->loc_.begin.column, ptr->loc_.end.column);
 	out += "]";
 	return out;
     }
@@ -58,9 +59,10 @@ namespace nas {
     void SourceLine::debug(void)
     {
 	std::cout << line << " > ";
-	if(label.length())
-	    std::cout << label << ": ";
-	std::cout << op << " ";
+	if(label)
+	    std::cout << label.str() << ": ";
+	if(op)
+	    std::cout << op.str() << " ";
 	for(const auto& nn: operands)
 	    std::cout << nn.debug() << " ";
 	std::cout << std::endl;
@@ -118,22 +120,23 @@ namespace nas {
     }
 
     void LineContext::fin(const Node& n) {
-	SourceLine* s = src;
+	if(!src)
+	    return;
 	for(const ParseError& pe: errs)
-	    s->errs.emplace_back(SourceLine::Error{pe.loc.begin.column, pe.loc.end.column, std::move(pe.msg)});
-	if(!n)
+	    src->errs.emplace_back(SourceLine::Error{pe.loc.begin.column, pe.loc.end.column, std::move(pe.msg)});
+	if(!(src->entire = n))
 	    return;
 	// std::cout << n.debug() << std::endl;
 	if(n == Node::Line) {
 	    if(n.size()>0 && n[0])
-		s->label = n[0].str();
+		src->label = n[0];
 	    if(n.size()>1 && n[1])
-		s->op = n[1].str();
+		src->op = n[1];
 	    if(n.size()>2 && n[2]) {
 		if(n[2]==Node::List)
-		    s->operands = std::move(n[2].nlist());
+		    src->operands = std::move(n[2].nlist());
 		else
-		    s->operands.emplace_back(std::move(n[2]));
+		    src->operands.emplace_back(std::move(n[2]));
 	    }
 	}
     }
@@ -154,11 +157,12 @@ namespace nas {
 	    };
     };
 
-    bool parser(Source& src, int arg, int argc, const char** argv)
+    bool parser(Source& src, int argc, const char** argv)
     {
 	Lexer		lexer(src);
 	nasyy::parser	parse(src.current, lexer);
 	bool		first = true;
+	int		arg = 0;
 
 	// Fake inputfile to report errors
 	InputFile* ifile = &src.files.emplace_back(InputFile{"<command line>", 0, nullptr});

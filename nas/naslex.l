@@ -5,7 +5,7 @@
 #include "nasgr.hh"
 
 #define Token(T) return parser::token::TOK_##T
-#define VToken(T,N,V) yylval = nas::Node::make( location(), nas::Node::N).set(V); Token(T)
+#define VToken(T,N,V) yylval = nas::Node::make( yylloc, nas::Node::N).set(V); Token(T)
 
 namespace nasyy {
 typedef nas::Loc location;
@@ -26,6 +26,7 @@ typedef nas::Loc location;
 
 %{
 	static std::string tmpstr;
+	static size_t tmpstr_col;
 
 	static int64_t deutf8(const char* txt, size_t len) {
 	    utf8proc_int32_t ch;
@@ -108,8 +109,8 @@ SPACE		[ \t]
 
 <STRING>[^"\\\n]+			tmpstr += str();
 <STRING>\\\p{Unicode}			tmpstr += text()[0];
-<STRING>["\n]				pop_state(); VToken(STRING, String, tmpstr);
-<INITIAL>\"[^"\\\n]+			push_state(STRING); tmpstr = str().substr(1);
+<STRING>["\n]				pop_state(); yylloc.begin.column=tmpstr_col; VToken(STRING, StringLit, tmpstr);
+<INITIAL>\"[^"\\\n]+			push_state(STRING); tmpstr_col=yylloc.begin.column; tmpstr = str().substr(1);
 
 <INITIAL,MNEM>\p{ASCII}			return text()[0];
 <INITIAL,MNEM>\p{Non_ASCII_Unicode}+	Token(BAD);
