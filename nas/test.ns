@@ -41,7 +41,7 @@ seg_free	dw	0
 reset_vec	db	1,2,"three",4,5,6,7
 		mov	#12,d0
 		mov	#@1000,d1
-		mov	#symbol,d2
+		mov	#symbol.w,d2
 		mov	d3,segmap
 		jsr	lib:function
 symbol		equ	.-reset_vec

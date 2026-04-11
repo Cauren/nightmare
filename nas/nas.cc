@@ -125,6 +125,8 @@ uint16_t Assembly::ealen(const Node& n)
     switch(n.type()) {
       case Node::String:
       case Node::Address:
+	if(n.size()>1 && n[1]==Node::Register)
+	    return 4;
 	return 8;
       case Node::Register:
 	return 2;
@@ -140,7 +142,7 @@ uint16_t Assembly::ealen(const Node& n)
 	return 2;
       case Node::Immed: {
 	  Value v = eval(n[0]);
-	  if(v.unresolved || v.type != Value::Numeric)
+	  if(!osz && v.unresolved || v.type != Value::Numeric)
 	      osz = 4;
 	  if(osz) switch(osz) {
 	    case 1: if(!overflow_<6>(v.value)) break;
@@ -233,10 +235,27 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl)
     ea.type = EA::Address;
 
     switch(n.type()) {
-      case Node::String:
       case Node::Address:
+	if(n == Node::Address) {
+	    v = eval(n[0]);
+	    if(n.size()>1 && n[1]==Node::Register) {
+		if(overflow_<18>(v.value)) {
+		    sl.err(n, "Value ({}) out of range", v.value);
+		    return true;
+		}
+		ea.resolved = !v.unresolved;
+		ea.reloc = Value::None;
+		ea.eabits = eam | 040 | (n[1].val()&7);
+		ea.sword(v.value);
+		return false;
+	    }
+	}
+	// fallthru
+      case Node::String:
 	ea.eabits = eam | 0072;
+
 	v = eval(n);
+
 	if(v.type != Value::Address) {
 	    sl.err(n, "Value does not resolve to an address");
 	}
@@ -532,6 +551,11 @@ Value Assembly::eval(const Node& n)
       }
 
       case Node::String: {
+	  if(n.str() == ".") {
+	      if(!cseg || !cseg->based)
+		  return { std::string("Pseudo-label '.' is only meaningful within a local segment"), &n };
+	      return { Value::Address, false, int64_t(cseg->addr), cseg, Value::None };
+	  }
 	  Symbol* sym = find(n.str());
 	  if(!sym)
 	      return { Value::Numeric, true, 0 };
@@ -744,11 +768,35 @@ struct i_EQU: public Instruction {
 	    return true;
 	if(!src.label)
 	    return src.err(src.op, "EQU requires a label to define");
+	Symbol* sym = a.find(src.label.str());
+	if(sym)
+	    return src.err(src.label, "Multiply defined identifier '{}'", src.label.str());
 	Value v = a.eval(src.operands[0]);
-	switch(v.type) {
-	  case Value::Invalid:
+
+	if(v.type == Value::Invalid)
 	    return eerr(v);
+
+	switch(v.type) {
+	  case Value::Numeric:
+	    sym = a.make(src.label.str());
+	    sym->type = Symbol::Val;
+	    sym->seg = nullptr;
+	    break;
+	  case Value::Seg:
+	    sym = a.make(src.label.str());
+	    sym->type = Symbol::Seg;
+	    sym->seg = v.seg;
+	    break;
+
+	  case Value::Address:
+	    sym = a.make(src.label.str());
+	    sym->type = Symbol::Addr;
+	    sym->seg = v.seg;
+	    break;
 	}
+
+	sym->unresolved = v.unresolved;
+	sym->value = uint64_t(v.value);
 	return false;
     };
 
@@ -989,6 +1037,15 @@ struct i_ADDR: public i_one_ea {
 
     bool pass2(Assembly& a)
     {
+	if(a.ea(src.operands[0], ea, src))
+	    return true;
+	if(ea.type != EA::Address)
+	    return src.err(src.operands[0], "{} requires an address operand", src.op.str());
+
+	word(bits | ea.eabits);
+	for(const auto w: ea.eaext)
+	    word(w);
+
 	return false;
     };
 };
@@ -997,8 +1054,38 @@ struct i_IMM9: public Instruction {
     i_IMM9(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     inline static Opcode::List<i_IMM9> opcodes = {
-	{ "TRAP",	0 },
+	{ "RTS",	0041000 },
+	{ "RTE",	0042000 },
+	{ "TRAP",	0047000 },
     };
+
+    bool pass1(Assembly& a)
+    {
+	src.debug();
+	if(src.operands.size() == 1) {
+	    if(src.operands[0]!=Node::EA || src.operands[0].eatype()!=Node::Immed)
+		return src.err(src.operands[0], "{} only accepts an immediate operand", src.op.str());
+	} else if(needs(0))
+	    return true;
+
+	ilen = 2;
+	return false;
+    }
+
+    bool pass2(Assembly& a)
+    {
+	int16_t	trap;
+	if(src.operands.size() == 1) {
+	    Value v = a.eval(src.operands[0][0]);
+	    if(v.type!=Value::Numeric || v.unresolved)
+		return src.err(src.operands[0][0], "Value must be a resolved constant");
+	    if(v.value < 0 || v.value > 15)
+		return src.err(src.operands[0][0], "Value ({}) out of range (0..15)", v.value);
+	    trap = v.value;
+	}
+	word(bits | trap);
+	return false;
+    }
 };
 
 struct i_RLIST: public Instruction {
