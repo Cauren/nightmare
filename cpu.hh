@@ -217,12 +217,12 @@ eam
 | 1   1   1   0   0   0   0   0   0   0   0   0 |  ea.type  |   ea.reg  |	JSR ea
 | 1   1   1   0   0   0   0   0   0   0   0   1 |  ea.type  |   ea.reg  |	JMP ea
 
-| 0   0   0   1   0   0   0   0   0 |	bsr	r9
+| 0   0   0   0   0 |      xx       |	bxx	r9
+| 0   0   0   0   1 |      xx       |	bxx	r27
 | 0   0   0   1   0   0   0   0   1 |	rts	#unwind9
 | 0   0   0   1   0   0   0   1   0 |	rte	#unwind9
 | 0   0   0   1   0   0   0   1   1 |	trap	#n
 
-| 0   0   0   1   1   0   0   0   0 |	bsr	r27
 
 
 ea type:

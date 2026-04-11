@@ -33,7 +33,8 @@ namespace nas {
 	    enum Type {
 		Nil, Error,
 		Value, StringLit,
-		Address, Seg, Binary, Unary, String, Register, Ibase, Index, EA, List, Line, Size,
+		Address, Seg, Binary, Unary, String, Register, Ibase, Index, EA,
+		List, Line, Size,
 	    };
 
 	    enum EAType {

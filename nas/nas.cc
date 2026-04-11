@@ -9,6 +9,7 @@
 
 
 using nas::Node;
+using nas::SourceLine;
 
 struct Segment {
     enum Type {
@@ -61,6 +62,16 @@ struct Value {
     Value&			operator = (const Value&) = default;
 };
 
+template<int bits> uint64_t signed_(int64_t n) {
+    constexpr uint64_t sign = 1l << (bits-1);
+    return (n<0)? (-n&(sign-1))|sign: n&(sign-1);
+}
+
+template<int bits> bool overflow_(int64_t n) {
+    constexpr int64_t sign = 1l << (bits-1);
+    return (n <= -sign) | (n >= sign);
+}
+
 struct EA {
     enum Type {
 	DReg, Immediate, Address
@@ -70,6 +81,11 @@ struct EA {
     Value::Relocate		reloc;
     uint32_t			eabits;
     std::vector<uint32_t>	eaext;
+
+    void			word(uint32_t n)				{ eaext.emplace_back(n & 0777777); };
+    void			sword(int32_t n)				{ word(signed_<18>(n)); };
+    void			dword(uint64_t n)				{ word(n); word(n>>18); };
+    void			sdword(int64_t n)				{ dword(signed_<36>(n)); };
 };
 
 struct Instruction;
@@ -84,9 +100,325 @@ struct Assembly {
     bool			pass1(int, const char**);
 
     Value			eval(const Node&);
+    uint16_t			ealen(const Node&);
+    bool			ea(const Node&, EA&, SourceLine&);
     Symbol*			find(const std::string& sym);
     Symbol*			make(const std::string& sym);
 };
+
+uint16_t Assembly::ealen(const Node& n)
+{
+    int ean = n.size();
+    int osz = 0;
+    if(ean>1 && n[ean-1]==Node::Size) {
+	ean--;
+	osz = n[ean].val();
+    }
+    int eam = 0200;
+    switch(osz) {
+      case 1: eam = 0000; break;
+      case 2: eam = 0100; break;
+    }
+
+    Value v { 0 };
+
+    switch(n.type()) {
+      case Node::String:
+      case Node::Address:
+	return 8;
+      case Node::Register:
+	return 2;
+    }
+    if(n != Node::EA)
+	return 0;
+
+    const auto eat = n.eatype();
+
+    switch(eat) {
+      case Node::PostInc:
+      case Node::PreDec:
+	return 2;
+      case Node::Immed: {
+	  Value v = eval(n[0]);
+	  if(v.unresolved || v.type != Value::Numeric)
+	      osz = 4;
+	  if(osz) switch(osz) {
+	    case 1: if(!overflow_<6>(v.value)) break;
+	    case 2: if(!overflow_<18>(v.value)) break;
+	    case 4: if(!overflow_<36>(v.value)) break;
+	    default:
+		return 0;
+	  } else if(!overflow_<6>(v.value)) {
+	      osz = 1;
+	  } else if(!overflow_<18>(v.value)) {
+	      osz = 2;
+	  } else {
+	      osz = 4;
+	  }
+	  switch(osz) {
+	    case 1:
+	      return 2;
+	    case 2:
+	      return 4;
+	    default:
+	      return 6;
+	  }
+      }
+    }
+
+    if(ean<1 || n[0] != Node::Ibase)
+	return 0;
+
+    int64_t offset = 0;
+    int areg = n[0].val();
+    bool hasoffset = false;
+
+    if(areg == 19)
+	areg = 070;
+    else
+	areg &= 7;
+
+    if(n[0].size()) {
+	Value v = eval(n[0][0]);
+	offset = v.value;
+	hasoffset = true;
+    }
+
+    // two special cases:
+    // (dx,ar) can reduce to either (ar), (d9,ar) or (d18,ar)
+    // ([dx,ar]) can reduce to ([d9,ar])
+    if(ean < 2) { // no index, no displacement, ar base
+	if(areg<8 && offset==0 && eat==Node::Indirect)
+	    return 2;
+	if(!overflow_<9>(offset))
+	    return 4;
+	if(areg<8 && !overflow_<18>(offset))
+	    return 4;
+    }
+
+    int64_t disp = 0;
+    if(ean > 2) {
+	Value v = eval(n[2]);
+	disp = v.value;
+	if(overflow_<9>(disp)) {
+	    if(eat==Node::Indirect && !hasoffset && !overflow_<18>(disp)) {
+		offset = disp;
+		disp = 0;
+	    }
+	}
+    }
+
+    return offset? 6: 4;
+}
+
+bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl)
+{
+    int ean = n.size();
+    int osz = 0;
+    if(ean>1 && n[ean-1]==Node::Size) {
+	ean--;
+	osz = n[ean].val();
+    }
+    int eam = 0200;
+    switch(osz) {
+      case 1: eam = 0000; break;
+      case 2: eam = 0100; break;
+    }
+
+    // std::cout << "EA: " << n.debug() << ", size " << osz << std::endl;
+
+    Value v { 0 };
+    uint32_t segnum = 0;
+
+    ea.type = EA::Address;
+
+    switch(n.type()) {
+      case Node::String:
+      case Node::Address:
+	ea.eabits = eam | 0072;
+	v = eval(n);
+	if(v.type != Value::Address) {
+	    sl.err(n, "Value does not resolve to an address");
+	}
+	if(v.seg && v.seg->type==Segment::Literal)
+	    segnum = v.seg->value;
+	ea.resolved = !v.unresolved;
+	ea.reloc = v.reloc;
+	ea.word(segnum);
+	ea.dword(v.value);
+	return false;
+      case Node::Register:
+	ea.type = EA::DReg;
+	ea.eabits = eam | (n.val()&7);
+	return false;
+    }
+    if(n != Node::EA) {
+	sl.err(n, "Invalid operand for {}", sl.op.str());
+	return true;
+    }
+
+    const auto eat = n.eatype();
+
+    switch(eat) {
+      case Node::PostInc:
+	ea.eabits = eam | 020 | (n.val()&7);
+	return false;
+      case Node::PreDec:
+	ea.eabits = eam | 030 | (n.val()&7);
+	return false;
+      case Node::Immed: {
+	  ea.type = EA::Immediate;
+	  Value v = eval(n[0]);
+	  if(v.unresolved || v.type != Value::Numeric) {
+	      sl.err(n[0], "Only fully resolved numeric values are acceptable immediate operands");
+	      osz = 4;
+	  }
+	  if(osz) switch(osz) {
+	    case 1: if(!overflow_<6>(v.value)) break;
+	    case 2: if(!overflow_<18>(v.value)) break;
+	    case 4: if(!overflow_<36>(v.value)) break;
+	    default:
+		sl.err(n[0], "Value overflows explicit size");
+		return true;
+	  } else if(!overflow_<6>(v.value)) {
+	      osz = 1;
+	  } else if(!overflow_<18>(v.value)) {
+	      osz = 2;
+	  } else {
+	      osz = 4;
+	  }
+	  switch(osz) {
+	    case 1:
+	      ea.eabits = 0300 | signed_<6>(v.value);
+	      return false;
+	    case 2:
+	      ea.eabits = 0171;
+	      ea.sword(v.value);
+	      return false;
+	    default:
+	      ea.eabits = 0271;
+	      ea.sdword(v.value);
+	      return false;
+	  }
+      }
+    }
+
+    if(ean<1 || n[0] != Node::Ibase) {
+	sl.err(n, "Internal: Indexed EA without an IBase?");
+	return true;
+    }
+    int64_t offset = 0;
+    int areg = n[0].val();
+    bool hasoffset = false;
+
+    if(areg == 19)
+	areg = 070;
+    else
+	areg &= 7;
+
+    if(n[0].size()) {
+	Value v = eval(n[0][0]);
+	if(v.type!=Value::Numeric || v.unresolved) {
+	    sl.err(n[0][0], "Offset is not a constant numeric value");
+	    return true;
+	}
+	offset = v.value;
+	hasoffset = true;
+    }
+
+    // same two special cases as above:
+    // (dx,ar) can reduce to either (ar), (d9,ar) or (d18,ar)
+    // ([dx,ar]) can reduce to ([d9,ar])
+    if(ean < 2) { // no index, no displacement, ar base
+	if(areg<8 && offset==0 && eat==Node::Indirect) {
+	    ea.eabits = eam | 020 | areg;
+	    return false;
+	}
+	if(!overflow_<9>(offset)) {
+	    ea.eabits = eam | 060 | areg;
+	    if(eat == Node::Indirect)
+		ea.word(signed_<9>(offset));
+	    else
+		ea.word(signed_<9>(offset)|0100000);
+	    return false;
+	}
+	if(areg<8 && !overflow_<18>(offset)) {
+	    ea.eabits = eam | 040 | areg;
+	    ea.sword(offset);
+	    return false;
+	}
+    }
+
+    int64_t disp = 0;
+    if(ean > 2) {
+	Value v = eval(n[2]);
+	if(v.type!=Value::Numeric || v.unresolved) {
+	    sl.err(n[2], "Displacement is not a constant numeric value");
+	    return true;
+	}
+	disp = v.value;
+	if(overflow_<9>(disp)) {
+	    // last resort, if not memory indexed _and_ no offset we can try there
+	    if(eat==Node::Indirect && !hasoffset && !overflow_<18>(disp)) {
+		offset = disp;
+		disp = 0;
+		hasoffset = true;
+	    } else {
+		sl.err(n[2], "Displacement out of range ({})", disp);
+		return true;
+	    }
+	}
+    }
+
+    if(overflow_<18>(offset)) {
+	sl.err(n[0], "Offset out of range ({})", offset);
+	return true;
+    }
+
+    ea.eabits = eam | 0060 | areg;
+    uint32_t extbits = 0;
+    if(ean>1 && n[1]) {
+	int scale = 0;
+	if(n[1].size()) {
+	    Value v = eval(n[1][0]);
+	    if(v.type!=Value::Numeric || v.unresolved) {
+		sl.err(n[1][0], "Scale is not a constant numeric value");
+		return true;
+	    }
+	    switch(v.value) {
+	      case 1: scale = 0; break;
+	      case 2: scale = 1; break;
+	      case 4: scale = 2; break;
+	      case 8: scale = 3; break;
+	      default:
+		sl.err(n[1][0], "Scale must be 1, 2, 4 or 8");
+		return true;
+	    }
+	}
+	switch(eat) {
+	  case Node::Indirect:	extbits = 0400000; break;
+	  case Node::PreIndex:	extbits = 0500000; break;
+	  case Node::PostIndex:	extbits = 0700000; break;
+	}
+	extbits |= scale << 12;
+	extbits |= (v.value&7) << 9;
+    } else switch(eat) {
+      case Node::Indirect:	extbits = 0200000; break;
+      case Node::PreIndex:	extbits = 0300000; break;
+      case Node::PostIndex:
+	sl.err(n, "Internal: postindexed without index?");
+	return true;
+    }
+
+    extbits |= signed_<9>(disp);
+    if(offset) {
+	ea.word(extbits | (1<<14));
+	ea.sword(offset);
+    } else
+	ea.word(extbits);
+    
+    return false;
+}
 
 Symbol* Assembly::find(const std::string& sym)
 {
@@ -126,6 +458,7 @@ Value Assembly::eval(const Node& n)
 	      return v2;
 	  if(v1.type==Value::Address && v2.type==Value::Address) {
 	      if(n.val() == '-') {
+		  v1.type = Value::Numeric;
 		  v1.unresolved |= v2.unresolved;
 		  if(v1.unresolved)
 		      return v1;
@@ -219,8 +552,6 @@ Value Assembly::eval(const Node& n)
     }
     return { "Unspecific evaluation error (not implemented?)", &n };
 }
-
-using nas::SourceLine;
 
 struct Instruction {
     SourceLine&			src;
@@ -547,35 +878,100 @@ struct i_DA: public Instruction {
 
 };
 
-struct i_EAD: public Instruction {
-    OPCODES(i_EAD) = {
+struct i_one_ea: public Instruction {
+    EA			ea;
+
+    bool pass1(Assembly& a)
+    {
+	if(needs(1))
+	    return true;
+	if(!(ilen = a.ealen(src.operands[0])))
+	    return true;
+	return false;
+    }
+
+};
+
+strict i_ea_reg: public i_one_ea {
+    bool		regdest;
+    int32_t		reg;
+
+    bool pass1(Assembly& a)
+    {
+	if(needs(2))
+	    return true;
+	if((regdest = (src.operands[1] == Node::Register))) {
+	    reg = src.operands[1].val();
+	    if(!(ilen = a.ealen(src.operands[0])))
+		return true;
+	} else if(src.operands[0] == Node::Register) {
+	    if(!(ilen = a.ealen(src.operands[1])))
+		return true;
+	} else
+	    return src.err(src.op, "Impossible?  Src or dst must be a register");
+
+	return false;
+    };
+
+};
+
+struct i_EAR: public i_ea_reg {
+    OPCODES(i_EAR) = {
 	{ "MOV",	0400000 },
 	{ "ADD",	0410000 },
 	{ "SUB",	0420000 },
 	{ "LEA",	0600600 },
-    };
-};
-
-struct i_EAA: public Instruction {
-    OPCODES(i_EAA) = {
 	{ "LDA",	0600500 },
 	{ "LDS",	0600400 },
 	{ "STA",	0610500 },
 	{ "STS",	0610400 },
     };
+
+    bool pass2(Assembly& a)
+    {
+	if(a.ea(src.operands[regdest? 0: 1], ea, src))
+	    return true;
+
+	if(!regdest)
+	    ea.eabits |= 0400;
+	ea.eabits |= (reg&7) << 9;
+	word(bits | ea.eabits);
+	for(const auto w: ea.eaext)
+	    word(w);
+
+	return false;
+    };
 };
 
-struct i_UNARY: public Instruction {
+struct i_UNARY: public i_one_ea {
     OPCODES(i_UNARY) = {
 	{ "CLR",	0600000 },
 	{ "DEC",	0601000 },
     };
+    EA			ea;
+
+    bool pass2(Assembly& a)
+    {
+	if(a.ea(src.operands[0], ea, src))
+	    return true;
+
+	word(bits | ea.eabits);
+	for(const auto w: ea.eaext)
+	    word(w);
+
+	return false;
+    };
 };
 
-struct i_ADDR: public Instruction {
+struct i_ADDR: public i_one_ea {
     OPCODES(i_ADDR) = {
 	{ "JSR",	0700000 },
 	{ "JMP",	0700100 },
+    };
+
+    bool pass2(Assembly& a)
+    {
+	return false;
     };
 };
 
@@ -709,9 +1105,10 @@ bool Assembly::pass1(int argc, const char** argv)
     bool fatal = false;
     for(auto& sl: source.lines) {
 	if(Instruction* i = sl.insn) {
-	    i->pass2(*this);
-	    if(i->ilen != i->bytes.size())
-		fatal = sl.err(sl.entire, "Fatal: Instruction length desync");
+	    if(!i->pass2(*this)) {
+		if(i->ilen != i->bytes.size())
+		    fatal = sl.err(sl.entire, "Fatal: Instruction length desync ({} vs {})", i->ilen, i->bytes.size());
+	    }
 	}
 	sl.print();
 	if(fatal)

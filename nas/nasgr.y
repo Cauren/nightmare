@@ -114,14 +114,14 @@ expr			: value
 			| expr '^' expr					{ $$ = Mi(Binary, '^', $1, $3); }
 			;
 
-ibase			: AREG						{ $$ = Ml(Ibase, $1); }	%expect 1
-			| expr ',' AREG					{ $$ = Ml(Ibase, $3, $1); }
-			| PCR						{ $$ = Ml(Ibase, Mi(Register, 19)); }
-			| expr ',' PCR					{ $$ = Ml(Ibase, Mi(Register, 19), $1); }
+ibase			: AREG						{ $$ = Mi(Ibase, $1.val()); }	%expect 1
+			| expr ',' AREG					{ $$ = Mi(Ibase, $3.val(), $1); }
+			| PCR						{ $$ = Mi(Ibase, 19); }
+			| expr ',' PCR					{ $$ = Mi(Ibase, 19, $1); }
 			;
 
-index			: DREG						{ $$ = Ml(Register, $1); }
-			| DREG '*' value				{ $$ = Ml(Register, $1, $3); }
+index			: DREG
+			| DREG '*' value				{ $$ = $1.add($3); }
 			;
 
 absolute		: expr
