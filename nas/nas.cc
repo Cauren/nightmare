@@ -622,13 +622,12 @@ struct Opcode {
     };
 };
 
-#define OPCODES(OP) OP(SourceLine& sl, uint32_t b): Instruction(sl, b) { }; \
-    inline static Opcode::List<OP> opcodes
-
 struct i_SEG: public Instruction {
-    OPCODES(i_SEG) = {
+    inline static Opcode::List<i_SEG> opcodes = {
 	{ "SEG",	123 },
     };
+
+    i_SEG(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     bool pass1(Assembly& a)
     {
@@ -699,9 +698,11 @@ struct i_SEG: public Instruction {
 };
 
 struct i_ORG: public Instruction {
-    OPCODES(i_ORG) = {
+    inline static Opcode::List<i_ORG> opcodes = {
 	{ "ORG",	0 },
     };
+
+    i_ORG(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     bool pass1(Assembly& a)
     {
@@ -731,9 +732,11 @@ struct i_ORG: public Instruction {
 };
 
 struct i_EQU: public Instruction {
-    OPCODES(i_EQU) = {
+    inline static Opcode::List<i_EQU> opcodes = {
 	{ "EQU",	0 },
     };
+
+    i_EQU(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     bool pass1(Assembly& a)
     {
@@ -752,11 +755,13 @@ struct i_EQU: public Instruction {
 };
 
 struct i_DAT: public Instruction {
-    OPCODES(i_DAT) = {
+    inline static Opcode::List<i_DAT> opcodes = {
 	{ "DW",		2 },
 	{ "DL",		4 },
 //	{ "DQ",		8 },
     };
+
+    i_DAT(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     bool pass1(Assembly&)
     {
@@ -799,9 +804,11 @@ struct i_DAT: public Instruction {
 };
 
 struct i_DB: public Instruction {
-    OPCODES(i_DB) = {
+    inline static Opcode::List<i_DB> opcodes = {
 	{ "DB",		1 },
     };
+
+    i_DB(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     bool align(void)
     {
@@ -848,9 +855,11 @@ struct i_DB: public Instruction {
 };
 
 struct i_DA: public Instruction {
-    OPCODES(i_DA) = {
+    inline static Opcode::List<i_DA> opcodes = {
 	{ "DA",		6 },
     };
+
+    i_DA(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     bool pass1(Assembly&)
     {
@@ -881,6 +890,8 @@ struct i_DA: public Instruction {
 struct i_one_ea: public Instruction {
     EA			ea;
 
+    i_one_ea(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
     bool pass1(Assembly& a)
     {
 	if(needs(1))
@@ -892,9 +903,11 @@ struct i_one_ea: public Instruction {
 
 };
 
-strict i_ea_reg: public i_one_ea {
+struct i_ea_reg: public i_one_ea {
     bool		regdest;
     int32_t		reg;
+
+    i_ea_reg(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
 
     bool pass1(Assembly& a)
     {
@@ -916,7 +929,7 @@ strict i_ea_reg: public i_one_ea {
 };
 
 struct i_EAR: public i_ea_reg {
-    OPCODES(i_EAR) = {
+    inline static Opcode::List<i_EAR> opcodes = {
 	{ "MOV",	0400000 },
 	{ "ADD",	0410000 },
 	{ "SUB",	0420000 },
@@ -926,6 +939,8 @@ struct i_EAR: public i_ea_reg {
 	{ "STA",	0610500 },
 	{ "STS",	0610400 },
     };
+
+    i_EAR(SourceLine& sl, uint32_t b): i_ea_reg(sl, b) { };
 
     bool pass2(Assembly& a)
     {
@@ -944,11 +959,12 @@ struct i_EAR: public i_ea_reg {
 };
 
 struct i_UNARY: public i_one_ea {
-    OPCODES(i_UNARY) = {
+    inline static Opcode::List<i_UNARY> opcodes = {
 	{ "CLR",	0600000 },
 	{ "DEC",	0601000 },
     };
-    EA			ea;
+
+    i_UNARY(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
 
     bool pass2(Assembly& a)
     {
@@ -964,10 +980,12 @@ struct i_UNARY: public i_one_ea {
 };
 
 struct i_ADDR: public i_one_ea {
-    OPCODES(i_ADDR) = {
+    inline static Opcode::List<i_ADDR> opcodes = {
 	{ "JSR",	0700000 },
 	{ "JMP",	0700100 },
     };
+
+    i_ADDR(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
 
     bool pass2(Assembly& a)
     {
@@ -976,13 +994,17 @@ struct i_ADDR: public i_one_ea {
 };
 
 struct i_IMM9: public Instruction {
-    OPCODES(i_IMM9) = {
+    i_IMM9(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    inline static Opcode::List<i_IMM9> opcodes = {
 	{ "TRAP",	0 },
     };
 };
 
 struct i_RLIST: public Instruction {
-    OPCODES(i_RLIST) = {
+    i_RLIST(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    inline static Opcode::List<i_RLIST> opcodes = {
 	{ "PUSH",	0 },
 	{ "PULL",	0 },
     };
