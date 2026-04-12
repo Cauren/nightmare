@@ -38,5 +38,16 @@ integer overflow, and how pointers behave).
 But mostly, this was written as an exercise in itself for _this_ programmer as the result
 of a conversation about portability.  :-)
 
+# Building
+
+Ironically(?) neither the VM nor its associated tools are very portable:  they expect
+a POSIX environment with a C++20 compiler (the Makefiles use `g++` by default).  That said,
+most of the dependencies on the environment are _fairly_ isolated and it shouldn't be
+too hard to adapt.
+
+The assembler requires [RE-flex](https://github.com/Genivia/RE-flex) and `libutf8proc` for
+proper UTF-8 support.  The former can be built easily from its repo and the latter is
+almost certainly available in your favorite package manager.
+
 *omoikane — 3/17/26, 7:56 PM
 You see, most VMs, you know, will have 8 bit bytes.  You're on 255 here, all the way up, all the way up, you're 255 on your byte.  Where can you go from there?  Where?  Nowhere.  Exactly.  What we do is, if we need that extra push over the cliff, we put it on the 9th bit.*
