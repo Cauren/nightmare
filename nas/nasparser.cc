@@ -20,7 +20,14 @@ namespace nas {
     Node Node::add(const Node& np) const
     {
 	if(ptr)
-	    ptr->nodes_.emplace(ptr->nodes_.end(), np);
+	    ptr->nodes_.emplace_back(np);
+	return *const_cast<Node*>(this);
+    }
+
+    Node Node::prefix(const Node& np) const
+    {
+	if(ptr)
+	    ptr->nodes_.emplace(ptr->nodes_.begin(), np);
 	return *const_cast<Node*>(this);
     }
 

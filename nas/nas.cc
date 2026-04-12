@@ -101,7 +101,7 @@ struct Assembly {
 
     Value			eval(const Node&);
     uint16_t			ealen(const Node&);
-    bool			ea(const Node&, EA&, SourceLine&);
+    bool			ea(const Node& n, EA& ea, SourceLine& sl, bool unsized=false);
     Symbol*			find(const std::string& sym);
     Symbol*			make(const std::string& sym);
 };
@@ -113,11 +113,6 @@ uint16_t Assembly::ealen(const Node& n)
     if(ean>1 && n[ean-1]==Node::Size) {
 	ean--;
 	osz = n[ean].val();
-    }
-    int eam = 0200;
-    switch(osz) {
-      case 1: eam = 0000; break;
-      case 2: eam = 0100; break;
     }
 
     Value v { 0 };
@@ -213,7 +208,7 @@ uint16_t Assembly::ealen(const Node& n)
     return offset? 6: 4;
 }
 
-bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl)
+bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl, bool unsized)
 {
     int ean = n.size();
     int osz = 0;
@@ -226,6 +221,8 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl)
       case 1: eam = 0000; break;
       case 2: eam = 0100; break;
     }
+    if(unsized)
+	eam = 0;
 
     // std::cout << "EA: " << n.debug() << ", size " << osz << std::endl;
 
@@ -245,7 +242,7 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl)
 		}
 		ea.resolved = !v.unresolved;
 		ea.reloc = Value::None;
-		ea.eabits = eam | 040 | (n[1].val()&7);
+		ea.eabits = eam | 050 | (n[1].val()&7);
 		ea.sword(v.value);
 		return false;
 	    }
@@ -280,10 +277,10 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl)
 
     switch(eat) {
       case Node::PostInc:
-	ea.eabits = eam | 020 | (n.val()&7);
+	ea.eabits = eam | 020 | (n[0].val()&7);
 	return false;
       case Node::PreDec:
-	ea.eabits = eam | 030 | (n.val()&7);
+	ea.eabits = eam | 030 | (n[0].val()&7);
 	return false;
       case Node::Immed: {
 	  ea.type = EA::Immediate;
@@ -992,7 +989,7 @@ struct i_EAR: public i_ea_reg {
 
     bool pass2(Assembly& a)
     {
-	if(a.ea(src.operands[regdest? 0: 1], ea, src))
+	if(a.ea(src.operands[regdest? 0: 1], ea, src, reg>7))
 	    return true;
 
 	if(!regdest)
@@ -1037,7 +1034,7 @@ struct i_ADDR: public i_one_ea {
 
     bool pass2(Assembly& a)
     {
-	if(a.ea(src.operands[0], ea, src))
+	if(a.ea(src.operands[0], ea, src, true))
 	    return true;
 	if(ea.type != EA::Address)
 	    return src.err(src.operands[0], "{} requires an address operand", src.op.str());
@@ -1088,13 +1085,47 @@ struct i_IMM9: public Instruction {
     }
 };
 
-struct i_RLIST: public Instruction {
-    i_RLIST(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+struct i_RLIST: public i_one_ea {
+    i_RLIST(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
 
     inline static Opcode::List<i_RLIST> opcodes = {
-	{ "PUSH",	0 },
-	{ "PULL",	0 },
+	{ "MOVM",	0620000 },
     };
+
+    uint32_t	reglist;
+
+    bool pass1(Assembly& a)
+    {
+	if(src.operands.size()<2)
+	    return src.err(src.op, "More than one operand expected");
+	reglist = 0;
+	for(const auto o: src.operands) {
+	    if(o == Node::Register) {
+		reglist |= 1 << o.val();
+	    } else {
+		if(!(ilen = a.ealen(o)))
+		    return true;
+	    }
+	}
+	ilen += 2;
+	return false;
+    }
+
+    bool pass2(Assembly& a)
+    {
+	if(a.ea(src.operands[
+		(src.operands[0] == Node::Register)? src.operands.size()-1: 0
+		], ea, src, true))
+	    return true;
+
+	word(bits | ea.eabits);
+	for(const auto w: ea.eaext)
+	    word(w);
+	word(reglist);
+
+	return false;
+    }
+
 };
 
 

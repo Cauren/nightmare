@@ -90,7 +90,6 @@
 %start line
 
 %expect 4
-%expect-rr 1
 
 %%
 
@@ -144,9 +143,11 @@ mem_ea			: '-' '(' AREG ')'				{ $$ = Mea(PreDec, $3); }
 			| absolute					%expect 1
 			;
 
+immed			: '#' expr					{ $$ = Mea(Immed, $2); }
+			;
 src_ea			: mem_ea
-			| DREG						%expect 1 %expect-rr 1
-			| '#' expr					{ $$ = Mea(Immed, $2); }
+			| DREG
+			| immed
 			;
 
 abslist			: absolute ',' absolute				{ $$ = Ml(List, $1, $3); }
@@ -161,7 +162,7 @@ ccreg			: CCR						{ $$ = Mi(Register, 15); }
 			| SMR						{ $$ = Mi(Register, 17); }
 			;
 
-adreg			: DREG						%expect 1 %expect-rr 1
+adreg			: DREG
 			| AREG						%expect 1
 			;
 
@@ -169,23 +170,23 @@ anyreg			: adreg
 			| ccreg
 			;
 
-reglist			: adreg ',' adreg ',' anyreg			{ $$ = Ml(List, $1, $3, $5); }
-			| adreg ',' ccreg				{ $$ = Ml(List, $1, $3); }
-			| ccreg ',' adreg				{ $$ = Ml(List, $1, $3); }
+reglist			: anyreg ',' anyreg				{ $$ = Ml(List, $1, $3); }
 			| reglist ',' anyreg				{ $$ = $1.add($3); }
+			;
 
-
-
-operands		: src_ea ',' DREG				{ $$ = Ml(List, $1, $3); }
+operands		: mem_ea ',' DREG				{ $$ = Ml(List, $1, $3); }
+			| DREG ',' DREG					{ $$ = Ml(List, $1, $3); }
+			| immed ',' DREG				{ $$ = Ml(List, $1, $3); }
 			| src_ea SIZE ',' DREG				{ $$ = Ml(List, $1.add($2), $4); }
 			| DREG ',' mem_ea				{ $$ = Ml(List, $1, $3); }
 			| DREG ',' mem_ea SIZE				{ $$ = Ml(List, $1, $3.add($4)); }
-			| src_ea ',' AREG				{ $$ = Ml(List, $1, $3); }
+			| mem_ea ',' AREG				{ $$ = Ml(List, $1, $3); }
 			| AREG ',' mem_ea				{ $$ = Ml(List, $1, $3); } 
 			| src_ea					{ $$ = Ml(List, $1); }
 			| src_ea SIZE					{ $$ = Ml(List, $1.add($2)); }
 			| abslist
-			| reglist
+			| reglist ',' mem_ea				{ $$ = $1.add($3); }
+			| mem_ea ',' reglist				{ $$ = $3.prefix($1); }
 			| '>' absolute					{ $$ = $2.add(Mi(Size, 3)); }
 			| '<' absolute					{ $$ = $2.add(Mi(Size, 1)); }
 			| %empty					{ $$ = nullptr; }

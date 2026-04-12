@@ -59,4 +59,5 @@ symbol		equ	.-reset_vec
 		clr	([7,a2,d4],9)
 		clr	([4,pc])
 		trap	#2
-		push	d0,d1,d2,d3,a5,a6,ccr
+		movm	d0,d1,d2,d3,a5,a6,ccr,(a7)+
+		movm	trapmap,a0,a1

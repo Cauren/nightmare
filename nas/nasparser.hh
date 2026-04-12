@@ -69,6 +69,7 @@ namespace nas {
 	    static Node			make(const Loc& l, Type t, std::initializer_list<Node> nl = {});
 	    Payload*			operator -> () const				{ return ptr; };
 	    Node			add(const Node&) const;
+	    Node			prefix(const Node&) const;
 	    Node			set(int64_t v)					{ ptr->val_ = v; return *this; };
 	    Node			set(std::string&& s)				{ ptr->str_ = s; return *this; };
 	    Node			set(std::string& s)				{ ptr->str_ = std::move(s); return *this; };
