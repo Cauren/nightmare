@@ -49,5 +49,5 @@ The assembler requires [RE-flex](https://github.com/Genivia/RE-flex) and `libutf
 proper UTF-8 support.  The former can be built easily from its repo and the latter is
 almost certainly available in your favorite package manager.
 
-*omoikane — 3/17/26, 7:56 PM
-You see, most VMs, you know, will have 8 bit bytes.  You're on 255 here, all the way up, all the way up, you're 255 on your byte.  Where can you go from there?  Where?  Nowhere.  Exactly.  What we do is, if we need that extra push over the cliff, we put it on the 9th bit.*
+> *omoikane — 3/17/26, 7:56 PM
+> You see, most VMs, you know, will have 8 bit bytes.  You're on 255 here, all the way up, all the way up, you're 255 on your byte.  Where can you go from there?  Where?  Nowhere.  Exactly.  What we do is, if we need that extra push over the cliff, we put it on the 9th bit.*
