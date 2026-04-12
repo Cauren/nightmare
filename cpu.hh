@@ -1,165 +1,180 @@
-#include <stdint.h>
+#include <cstdint>
 #include <cstddef>
 #include <concepts>
 
 namespace Nightmare {
 
-    struct Byte {
-	uint16_t		n: 9;
-    };
+    // smallest integral types that can hold a 36-bit long
+    typedef uint_fast64_t	uint_t;
+    typedef int_fast64_t	int_t;
 
-    struct DReg {
-	uint64_t		n: 36;
+    // smallest unsigned integral type that can hold an 18-bit word
+    typedef uint_fast32_t	uword_t;
 
-	static const uint64_t	sbit = uint64_t(1)<<35;
-	static const uint64_t	smask = ~(sbit-1);
-	static const uint64_t	umask = smask^sbit;
-	static const uint64_t	vmask = ~smask;
-	static const uint64_t	nan = sbit;
+    // smallest usigned integral type that can hold a 9-bit byte
+    typedef uint_fast16_t	byte_t;
 
-	template<std::unsigned_integral T>
-	DReg&			operator = (T v) {
-				    n = v;
-				    return *this;
-				};
-	template<std::signed_integral T>
-	DReg&			operator = (T v) {
-				    n = v<0? sbit|-v: v;
-				    return *this;
-				};
-	DReg&			operator = (uint64_t v) {
-				    n = v&umask? nan: v;
-				    return *this;
-				};
-	DReg&			operator = (int64_t v) {
-				    if(v<0) {
-					v = -v;
-					n = v&smask? nan: v|sbit;
-				    } else
-					n = v&smask? nan: v;
-				    return *this;
-				};
-	explicit		operator uint64_t () const {
-				    return n;
-				};
-				operator int64_t () const {
-				    return n&sbit? ((-n)&~smask): n;
-				};
+    template<uint_t bits> constexpr uint_t signed_(int_t n) {
+	uint_t sign = 1l << (bits-1);
 
-	bool			isnan(void) const					{ return n == sbit; };
-    };
+	return (n<0)?
+	    ((n<=sign)? sign: sign|-n):
+	    ((n>=sign)? sign: n);
+    }
+    inline static constexpr uint_t signed_(uint_t bits, int_t n) {
+	uint_t sign = 1l << (bits-1);
 
-    struct AReg {
-	uint32_t		seg: 18;
-	uint64_t		addr: 36;
+	return (n<0)?
+	    ((n<=sign)? sign: sign|-n):
+	    ((n>=sign)? sign: n);
+    }
 
-				AReg()							{ };
-				AReg(const Areg& a): seg(a.seg), addr(a.addr)		{ };
-				AReg(uint32_t s, uint64_t a): seg(s), addr(a)		{ };
+    template<uint_t bits> constexpr uint_t unsigned_(int_t n) {
+	return uint_t(n) & ((1l << bits) - 1);
+    }
+    inline static constexpr uint_t unsigned_(uint_t bits, int_t n) {
+	return uint_t(n) & ((1l << bits) - 1);
+    }
 
-	AReg			operator + (uint64_t n) const				{ return AReg(seg, addr+n); };
-    };
+    template<uint_t bits> constexpr int_t sex_(uint_t n) {
+	uint_t sign = 1l << (bits-1);
+	return (n&sign)? -(n^sign): n;
+    }
+    inline static constexpr int_t sex_(uint_t bits, uint_t n) {
+	uint_t	sign = 1l << (bits-1);
+	return (n&sign)? -(n^sign): n;
+    }
 
-    struct Machine {
-	size_t			mem_alloc;
-	Byte*			mem;
-    };
+    class CPU {
+	public:
+	    byte_t*	mem_ = nullptr;
+	    size_t	mem_alloc_ = 0;
 
-    struct Segment {
-	uint32_t		seg: 18;
-	bool			valid: 1,
-				super: 1,
-				read: 1,
-				write: 1,
-				exec: 1;
-	uint64_t		addr:36;
-	uint64_t		len:36;
-    };
+	    struct Trap;
+	    struct AReg;
 
-    struct Trap {
-	AReg			ea;
-	uint16_t		num;
+	    enum Trap_t {
+		Reset,
+		ELOOP, EFAULT, EINVAL, EPERM, EACCES,
+	    };
 
-				Trap(uint16_t n, const AReg& areg): ea(areg), num(n)	{ };
-    };
-
-    struct Halt {
-	uint16_t		breakpoint;
-
-				Halt(uint16_t bp=0): breakpoint(bp)			{ };
-    };
-
-    struct CPU {
-	Machine&		m;
-
-	AReg			pc;
-	DReg			d[8];
-	AReg			a[8];
-	AReg			ssp;
-	union {
-	    uint16_t		ccr: 9;
-	    struct {
-		bool			z: 1,
-					n: 1,
-					v: 1;
-	    }			cc;
-	};
-	uint16_t		ir: 9;
-	union {
-	    uint16_t		smr: 9;
-	    struct {
-		bool			signal: 1,
+	    struct Segment {
+		uword_t			seg;
+		bool			valid: 1,
 					super: 1,
-					reset: 1,
-					restart: 1;
-	     }			sm;
-	};
+					read: 1,
+					write: 1,
+					exec: 1;
+		uint_t			len;
+		byte_t*			mem;
+	    };
 
-	Segment			segs[16];
-	uint16_t		pending;
-	AReg			fault;
-	bool			halted;
+	    struct AReg {
+		uint_t			addr;
+		uword_t			seg;
+	    };
 
-				CPU(Machine& mach): m(mach)			{ reset(); };
+	    struct Fault {
+		Trap_t			trap;
+		AReg			fault;
+	    };
 
-	void			display(void) const;
+	    struct Addr {
+		Segment*		seg;
+		uint_t			addr;
 
-	void			run(void);
+					Addr(void): seg(nullptr)					{ };
+					Addr(Addr&&) = default;
+					Addr(const Addr&) = default;
+					Addr(Segment& s, uint_t a): seg(&s), addr(a)			{ };
 
-	const Segment&		seg(const AReg&);
-	Byte*			mem(const AReg&, size_t len, bool write=false);
-	static uint64_t		read1(const Byte* b)				{ return b->n; };
-	static uint64_t		read2(const Byte* b)				{ return read1(b)<<9 | read1(b+1); };
-	static uint64_t		read4(const Byte* b)				{ return read2(b) | read2(b+2)<<18; };
-	static int64_t		sex1(uint64_t n)				{ return (n&(1<<8))?  (1<<8)-n:  n; };
-	static int64_t		sex2(uint64_t n)				{ return (n&(1<<17))? (1<<17)-n: n; };
-	static int64_t		sex3(uint64_t n)				{ return (n&(1<<26))? (1<<26)-n: n; };
-	static int64_t		sex4(uint64_t n)				{ return (n&(1<<35))? (1<<35)-n: n; };
-	static void		write1(Byte* b, uint16_t n)			{ b->n = n; };
-	static void		write2(Byte* b, uint32_t n)			{ write1(b, n>>9); write1(b+1, n); };
-	static void		write4(Byte* b, uint64_t n)			{ write2(b, n); write2(b+2, n>>18); };
+					operator bool (void) const		{ return seg; };
+					operator AReg (void) const		{ return { addr, seg? seg->seg: 0777777 }; };
 
-	void			stores(const AReg& ea, size_t len, int64_t s) {
-				    Byte* d = mem(ea, len, true);
-				    int64_t sign = 1 << ((9*len)-1);
-				    if(s<0) {
-					s = -s;
-					if(s >= sign) {
-					    s = 0;
-					    cc.v = true;
-					}
-					s |= sign;
-				    } else if(s >= sign) {
-					s = sign;
-					cc.v = true;
-				    }
-				    storeu(ea, len, s);
-				};
-	void			reset(void);
-	void			trap(uint16_t num, const AReg&);
+		inline void		reads(uint_t len)			{ access(len, seg->read); };
+		inline void		writes(uint_t len)			{ access(len, seg->write); };
+		inline void		execs(uint_t len)			{ access(len, seg->exec); };
+		void			access(uint_t len, bool perm);
+
+		Addr&			operator = (nullptr_t)			{ seg = nullptr; return *this; };
+		Addr&			operator = (Addr&&) = default;
+		Addr&			operator = (const Addr&) = default;
+		Addr&			operator += (int_t len)			{ addr += len; return *this; };
+		Addr&			operator -= (int_t len)			{ addr -= len; return *this; };
+
+		void			ubyte(std::integral auto n) noexcept	{ seg->mem[addr++] = unsigned_<9>(n); };
+		void			uword(std::integral auto n) noexcept	{ ubyte(n>>9); ubyte(n); };
+		void			ulong(std::integral auto n) noexcept	{ uword(n); uword(n>>18); };
+		void			sbyte(std::integral auto n) noexcept	{ ubyte(signed_<9>(n)); };
+		void			sword(std::integral auto n) noexcept	{ uword(signed_<18>(n)); };
+		void			slong(std::integral auto n) noexcept	{ ulong(signed_<36>(n)); };
+		void			areg(const AReg& ar) noexcept		{ uword(ar.seg); ulong(ar.addr); };
+		uint_t			ubyte(void) noexcept			{ return seg->mem[addr++]; };
+		uint_t			uword(void) noexcept			{ return ubyte() | (ubyte() << 9); };
+		uint_t			ulong(void) noexcept			{ return (uword() << 18) | uword(); };
+		int_t			sbyte(void) noexcept			{ return sex_<9>(ubyte()); };
+		int_t			sword(void) noexcept			{ return sex_<18>(uword()); };
+		int_t			slong(void) noexcept			{ return sex_<36>(ulong()); };
+		AReg			areg(void) noexcept			{ AReg ar; ar.seg = uword(); ar.addr = ulong();
+										  return ar; };
+	    };
+
+	    struct DReg {
+		int_t			data;
+	    };
+
+	    AReg			pc;
+	    DReg			d[8];
+	    AReg			a[8];
+	    AReg			ssp;
+	    struct CC {
+		enum Bits { Z, C, V, N, };
+		uword_t				reg;
+
+		CC&			operator = (uword_t r)			{ reg = r; return *this; };
+		CC&			operator += (Bits b)			{ reg |= (1<<int(b)); return *this; };
+		CC&			operator -= (Bits b)			{ reg &= ~(1<<int(b)); return *this; };
+		bool			operator & (Bits b)			{ return reg & (1<<int(b)); };
+
+					operator uword_t(void) const		{ return reg; };
+	    }				ccr;
+	    uword_t			ir;
+	    struct SM {
+		enum Bits { Super };
+		uword_t				reg;
+
+		SM&			operator = (uword_t r)			{ reg = r; return *this; };
+		SM&			operator += (Bits b)			{ reg |= (1<<int(b)); return *this; };
+		SM&			operator -= (Bits b)			{ reg &= ~(1<<int(b)); return *this; };
+		bool			operator & (Bits b)			{ return reg & (1<<int(b)); };
+
+					operator uword_t(void) const		{ return reg; };
+	    }				smr;
+	    uint_t			segtable;
+
+	    Segment			scache[16];
+	    uint64_t			pending;
+	    AReg			fault;
+
+	    Addr			addr(uword_t sn, uint_t a, bool super=false);
+	    Addr			addr(const AReg& ar)			{ return addr(ar.seg, ar.addr); };
+
+	    bool			reset(void);
+	    void			trap(byte_t num, const AReg& t);
+	    void			run(void);
     };
+
+    void CPU::Addr::access(uint_t len, bool perm) {
+	if(!perm)
+	    throw Fault{ EACCES, *this };
+	if(!seg || addr+len > seg->len)
+	    throw Fault{ EFAULT, *this };
+    };
+
 
 };
+
+
 
 #if 0
 
@@ -187,9 +202,8 @@ s1: 9 bit interupt mask
 s2: 9 bit mode
 18 bit insn
 
-segment 0: flat memory / ring 0
-segment 1: traps (sans reset)
-segment 2: segment map
+segment 0400017: flat memory / ring 0
+segment 0400016: fake seg for segmap
 
 /// trap vectors
 0: reset
@@ -209,19 +223,22 @@ eam
   17  16  15  14  13  12  11  10  9   8   7   6   5   4   3   2   1   0
 | 1   0 |      op       |     dr    | d |  eam  |  ea.type  |   ea.reg  |	OP ea,dr  dr,ea
 | 1   1   0   0   0 |      op       | 0 |  eam  |  ea.type  |   ea.reg  |	OP ea
-| 1   1   0   0   0   0 |     ar    | 1   0   0 |  ea.type  |   ea.reg  |	LDS ea,ar
-| 1   1   0   0   0   0 |     ar    | 1   0   1 |  ea.type  |   ea.reg  |	LDA ea,ar
-| 1   1   0   0   0   0 |     ar    | 1   1   1 |  ea.type  |   ea.reg  |	LEA ea,ar
-| 1   1   0   0   0   1 |     ar    | 1   0   0 |  ea.type  |   ea.reg  |	STS ar,ea
-| 1   1   0   0   0   1 |     ar    | 1   0   1 |  ea.type  |   ea.reg  |	STA ar,ea
-| 1   1   1   0   0   0   0   0   0   0   0   0 |  ea.type  |   ea.reg  |	JSR ea
-| 1   1   1   0   0   0   0   0   0   0   0   1 |  ea.type  |   ea.reg  |	JMP ea
 
-| 0   0   0   0   0 |      xx       |	bxx	r9
-| 0   0   0   0   1 |      xx       |	bxx	r27
-| 0   0   0   1   0   0   0   0   1 |	rts	#unwind9
-| 0   0   0   1   0   0   0   1   0 |	rte	#unwind9
-| 0   0   0   1   0   0   0   1   1 |	trap	#n
+| 1   1   0   0   1   0 |     ar    | 0   0   0 |  ea.type  |   ea.reg  |	STS ar,ea
+| 1   1   0   0   1   0 |     ar    | 1   0   0 |  ea.type  |   ea.reg  |	LDS ea,ar
+| 1   1   0   0   1   0 |     ar    | 0   0   1 |  ea.type  |   ea.reg  |	STA ar,ea
+| 1   1   0   0   1   0 |     ar    | 1   0   1 |  ea.type  |   ea.reg  |	LDA ea,ar
+| 1   1   0   0   1   0 |     ar    | 1   1   0 |  ea.type  |   ea.reg  |	LEA ea,ar
+
+| 1   1   1   0   0   0   0   0   0 | d | 0   0 |  ea.type  |   ea.reg  |	MOVM regs...,ea  ea,regs...
+| 1   1   1   0   0   0   0   0   1   0   0   0 |  ea.type  |   ea.reg  |	JSR ea
+| 1   1   1   0   0   0   0   1   0   0   0   0 |  ea.type  |   ea.reg  |	JMP ea
+
+| 0   0   0   0   0 |      xx       |                 r9                |	bxx r9
+| 0   0   0   0   1 |      xx       |                 r9		|	bxx r27
+| 0   0   0   1   0   0   0   0   1 |                 i9		|	rts #unwind9
+| 0   0   0   1   0   0   0   1   0 |                 i9		|	rte #unwind9
+| 0   0   0   1   0   0   0   1   1 |                 i9		|	trap #n
 
 
 
@@ -231,7 +248,7 @@ ea type:
 010	(ar)+
 011	-(ar)
 100	(d18,ar)
-101	sr:d36
+101	sr:d18
 110	extended
 111:000	pc extended
 111:001	immediate

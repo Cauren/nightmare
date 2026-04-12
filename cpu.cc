@@ -1,407 +1,357 @@
 #include "cpu.hh"
 
 
-#define IMATCH(mask,bits) if((i&(0b##mask##UL))==(0b##bits##UL))
-
 namespace Nightmare {
 
 
-
-void CPU::reset(void)
+CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
 {
-    sm.super = true;
-    sm.reset = true;
-    sm.restart = false;
-    sm.signal = false;
+    Segment& s = scache[segno&15];
+    super |= smr & SM::Super;
+
+    if(!s.valid || s.seg!=segno) {
+	switch(segno) {
+	  case 0777777:
+	    s = { segno, true, true, true, true, true, mem_alloc_, mem_ };
+	    break;
+	  case 0777776:
+	    s = { segno, true, true, true, true, false, 6*32, mem_+segtable };
+	    break;
+	  default: {
+	    Addr segdata = addr(0777776, segno*16, super);
+	    segdata.reads(16);
+	    uint_t sa = segdata.ulong();
+	    uint_t sl = segdata.ulong();
+	    uword_t sf = segdata.uword();
+	    s = { segno, true, bool(sf&010), bool(sf&004), bool(sf&002), bool(sf&001), sl, mem_+sa };
+	    break;
+	  }
+	}
+    }
+    if(s.super && !super)
+	throw Fault{ EPERM, Addr(s, a) };
+    return Addr(s, a);
+}
+
+bool CPU::reset(void)
+{
+    smr = 0;
+    smr += SM::Super;
     ir = 0777;
     ccr = 0;
 
-    trap = 0;
-    segs[0].seg = 0;
-    segs[0].valid = true;
-    segs[0].super = true;
-    segs[0].read = true;
-    segs[0].write = false;
-    segs[0].exec = true;
-    segs[0].addr = 0;
-    segs[0].len = m.mem_alloc;
-    for(int i=1; i<16; i++)
-	segs[i].valid = false;
+    for(int i=0; i<16; i++)
+	scache[i].valid = false;
 
-    pc.seg = 0;
-    pc.addr = 2;
-    Byte* rst_addr = mem(pc, 4);
-    if(!rst_addr)
-	halt();
-    pc.addr = read4(rst_addr);
+    try {
+	Addr rvec = addr(0777777, 2, true); // We ignore segno for the reset vector
+	rvec.reads(4);
+	pc.seg = 0777777;
+	pc.addr = rvec.ulong();
+    } catch(const Fault&) {
+	return true;
+    }
+    return false;
 }
 
-void CPU::trap(uint16_t num, const AReg& ea)
+void CPU::trap(byte_t num, const AReg& faddr)
 {
-    Byte* frame = mem(sm.super? a[7]: ssp, 22, true);
-    if(!frame)
-	halt();
-    write2(frame+20, pc.seg);
-    write4(frame+16, pc.addr);
-    write2(frame+14, a[7].seg);
-    write4(frame+10, a[7].addr);
-    write2(frame+8,  ea.seg);
-    write2(frame+4,  ea.addr);
-    write1(frame+3,  smr);
-    write1(frame+2,  ir);
-    write1(frame+1,  ccr);
-    ssp.addr += 22;
-    ir = 0777;
-    if(!sm.super) {
-	a[7] = ssp;
-	sm.super = true;
+    try {
+	AReg usp = a[7];
+	SM osmr = smr;
+
+	if(!(smr & SM::Super)) {
+	    a[7] = ssp;
+	    smr += SM::Super;
+	}
+
+	Addr frame = addr(a[7]);
+
+	frame.writes(24);
+	frame.uword(uword_t(ccr));
+	frame.uword(uword_t(ir));
+	frame.uword(uword_t(osmr));
+	frame.areg(faddr);
+	frame.areg(usp);
+	frame.areg(pc);
+
+	a[7].addr += 24;
+	ir = 0777;
+
+	Addr vec = addr(0777777, num*6);
+	vec.reads(6);
+	uword_t vs = vec.uword();
+	pc = AReg{ vs, vec.ulong() };
+
+    } catch(const Fault&) {
+
+	throw Fault{ ELOOP, faddr };
+
     }
-    pc.seg = 1;
-    pc.addr = num*6;
-    Byte* trap_addr = mem(pc, 6);
-    if(trap_addr) {
-	pc.seg = read2(trap_addr);
-	pc.addr = read4(trap_addr+2);
-	return;
-    }
-    if(num == 1)
-	halt();
-    throw Trap(1, pc);
 }
 
+#if 0
 void CPU::rte(void)
 {
-    if(!sm.super)
-	throw Trap(3, pc);
-    a[7].addr -= 22;
-    Byte* frame = mem(a[7], 22);
-    if(!frame) {
-	a[7].addr += 22;
-	throw Trap(1, pc);
-    }
-    read1(frame+1,  ccr);
-    read1(frame+2,  ir);
-    read1(frame+3,  smr);
-    if(!sm.super) { // return to userspace
+    a[7].addr -= 24;
+    Addr frame = addr(a[7]);
+
+    frame.reads(24);
+    ccr = frames.uword();
+    ir = frames.uword();
+    SM nsmr = frames.uword();
+    frame += 6; // skip fault
+    AReg usp = frame.areg();
+    pc = frame.areg();
+
+    if(!(nsmr & SM::Super)) {
 	ssp = a[7];
-	read2(frame+14, a[7].seg);
-	read4(frame+10, a[7].addr);
+	a[7] = usp;
     }
-    read2(frame+20, pc.seg);
-    read4(frame+16, pc.addr);
+    smr = nsmr;
 }
+#endif
 
 void CPU::run(void)
 {
-    halted = false;
-    while(!halted) {
-	try {
-	    if(!pending) {
-		// check for interrupts here
+    bool halted = false;
+    while(!halted) try {
+
+	if(pending) {
+	    int tr;
+	    for(tr=0; tr<24; tr++)
+		if(pending & (1l << tr))
+		    break;
+	    if(tr < 24) {
+		pending ^= (1l << tr);
+		trap(tr, fault);
+		continue;
 	    }
-	    if(pending) {
-		uint16_t tn = pending;
-		pending = 0;
-		trap(tn, fault);
+	    pending = 0;
+	}
+
+	Addr	instr = addr(pc);
+	uword_t	ilen = 2;
+
+	instr.execs(2);
+	uword_t	opcode = instr.uword();
+	uword_t ext = 0;
+	uword_t	ereg;
+	uint_t	uinput;
+	int_t	sinput;
+	uword_t	ea_bits;
+	uword_t	easz = 2;
+	int_t	offset = 0;
+	int_t	disp = 0;
+	int_t	index = 0;
+	Addr	eaddr;
+	bool	memea = true;
+	enum {
+	    Immed, DReg,
+	    Absolute,
+	    PostInc, PreDec, Indirect, PreIndex, PostIndex
+	}	eamode;
+
+	if(opcode & (1<<17)) {
+	    // bit 17 set means there are EA fields on the opcode
+
+	    eamode = Indirect;
+	    if((opcode&0600000)==0400000 || (opcode&0760000)==0600000) // those have eam field
+		easz = (opcode>>6) & 3;
+
+	    switch(easz) {
+	      case 3:
+		memea = false;
+		uinput = opcode&077;
+		ea_bits = 6;
+		eamode = Immed;
+		break;
+	      case 0: ea_bits = 9; break;
+	      case 1: ea_bits = 18; break;
+	      default: ea_bits = 36; break;
 	    }
 
-	    Segment& s = seg(pc);
-	    int ilen = 2;
-	    int imax = s.len-pc.addr;
-	    if(!s.exec || (s.super && !sm.super) || ilen>imax)
-		throw Trap(2, pc+ilen);
-
-	    Byte*	instr = pc.addr + m.mem;
-	    uint16_t	i = read2(instr);
-	    AReg	ea;
-	    int		ireg = (i>>9) & 7;
-	    int64_t	idata;
-	    int		isize = 0;
-	    bool	predec = false;
-	    bool	postinc = false;
-	    int		areg; // for postdec and preinc
-	    bool	earead = false;
-	    bool	eawrite = false;
-
-	    enum {
-		IMPLIED, IMMED, DR, EA,
-	    }		imode = IMPLIED;
-
-	    if((i>>17) & 1) { // Instructions with EA fields
-
-		int eam = (i>>6) & 3;
-		static const int eam_bits[4] = { 9, 18, 36, 6 };
-		isize = eam_bits[eam]; // default
-		if(eam == 3) {
-		    imode = IMMED;
-		    idata = i & 077;
-		} else
-		    imode = EA;
-
-		/*  */ IMATCH( 110'000'000'100'000'000, 100'000'000'000'000'000 ) { // op2, ea->dr
-			earead = true;
-		} else IMATCH( 110'000'000'100'000'000, 100'000'000'100'000'000 ) { // op2, dr->ea
-		    eawrite = true;
-		} else IMATCH( 111'110'000'100'000'000, 110'000'000'000'000'000 ) { // op1, ea->ea
-		    eawrite = earead = true;
-		} else IMATCH( 111'111'000'100'000'000, 110'001'000'000'000'000 ) { // lda, ea->ar
-		    if(eam==0)
-			throw Trap(3, pc);
-		    earead = true;
-		} else IMATCH( 111'111'000'100'000'000, 110'001'000'100'000'000 ) { // sta, ar->ea
-		    if(eam==0)
-			throw Trap(3, pc);
-		    eawrite = true;
-		} else
-		    throw Trap(3, pc);
-
-		ea = a[areg = (i&7)]; // by default
-		if(earead || eawrite) switch((i>>3 & 7)) {
-		    case 0:
-			imode = DR;
-			break;
-		    case 1:
-			break;
-		    case 2:
-			postinc = true;
-			break;
-		    case 3:
-			ea.addr -= isize/9;
-			predec = true;
-			break;
-		    case 4:
-			ilen += 2;
-			if(ilen > imax)
-			    throw Trap(2, pc+ilen);
-			ea.addr += sex2(read2(instr+2));
-			break;
-		    case 5:
-			ilen += 4;
-			if(ilen > imax)
-			    throw Trap(2, pc+ilen);
-			ea = AReg(a[i&7].seg, read4(instr+2));
-			break;
-		    case 7:
-			if((i&7) == 1) { // immediate
-			    imode = IMMED;
-			    if(isize > 18) {
-				ilen += 4;
-				if(ilen > imax)
-				    throw Trap(2, pc+ilen);
-				idata = read4(instr+2);
-				isize = 36;
-			    } else {
-				ilen += 2;
-				if(ilen > imax)
-				    throw Trap(2, pc+ilen);
-				idata = read2(instr+2);
-				isize = 18;
-			    }
-			}
-			if(i&7) // not PC-relative extended
-			    throw Trap(3, pc);
-			ea = pc;
-			// fall through
-		    case 6:
-			ilen += 2;
-			if(ilen > imax)
-			    throw Trap(2, pc+ilen);
-			else {
-			    uint32_t	ext = read2(instr+2);
-			    int64_t	disp = sex1(ext & 0777);
-			    int64_t	idx = 0;
-			    int64_t	offset = 0;
-
-			    ext >>= 9;
-
-			    if(ext & 0600) { // has offset
-				if(ext & 0040) {
-				    ilen += 4;
-				    if(ilen > imax)
-					throw Trap(2, pc+ilen);
-				    offset = sex4(read4(instr+4));
-				} else {
-				    ilen += 1;
-				    if(ilen > imax)
-					throw Trap(2, pc+ilen);
-				    offset = sex2(read2(instr+4));
-				}
-			    } else {
-				offset = disp;
-				disp = 0;
-			    }
-
-			    if(ext & 0400) { // has index
-				idx = d[ext&7];
-				idx *= 1 << ((ext>>3)&3);
-			    }
-
-			    if((ext & 0700) == 0700) { // post indirect
-				offset += idx;
-				idx = 0;
-			    }
-
-			    ea.addr += offset;
-			    if(ext & 0100) { // is indirect
-				Byte* indir = mem(ea, 6);
-				if(!indir)
-				    throw Trap(2, ea);
-				ea.seg = read2(indir2);
-				ea.addr = read4(indir+2);
-			    }
-
-			    ea.addr += idx;
-			    ea.addr += disp;
+	    if(eamode != Immed) {
+		ereg = opcode & 007;
+		switch(opcode & 070) {
+		  case 000: // DR
+		    memea = false;
+		    eamode = DReg;
+		    uinput = unsigned_(ea_bits, d[ereg].data);
+		    break;
+		  case 010: // (ar)
+		    break;
+		  case 020: // (ar)+
+		    eamode = PostInc;
+		    break;
+		  case 030: // -(ar)
+		    eamode = PreDec;
+		    break;
+		  case 040: // (d18,ar)
+		    instr.execs(2);
+		    disp = instr.sword();
+		    break;
+		  case 050: // ar:d18
+		    eamode = Absolute;
+		    instr.execs(2);
+		    eaddr = addr(a[ereg].seg, instr.uword());
+		    break;
+		  case 070:
+		    if((opcode&077) == 071) {
+			memea = false;
+			eamode = Immed;
+			if(easz==2) {
+			    instr.execs(4);
+			    uinput = instr.ulong();
+			} else {
+			    instr.execs(2);
+			    uinput = instr.uword();
 			}
 			break;
-		}
-
-	    if(earead) switch(imode) {
-		case IMPLIED: // not supposed to be possible
-		    throw Trap(3, pc);
-		case DR:
-		    idata = d[ireg].n;
-		    break;
-		case EA:
-		    Byte* src = mem(ea, isize/9);
-		    if(!src)
-			throw Trap(2, ea);
-		    if(isize >= 36)
-			idata = read4(src);
-		    else if(isize >= 18)
-			idata = read2(src);
-		    else
-			idata = read1(src);
-		    break;
-	    }
-
-	    auto sidata = [&idata, &isize]() -> int64_t {
-		int64_t sign = 1 << (isize-1);
-
-		if(idata & sign) {
-		    if(idata != sign)
-			return sign-idata;
-		    if(sm.signal)
-			throw Trap(4, (imode==EA)? ea: pc);
-		    return sign;
-		}
-		return idata;
-	    };
-
-	    auto result = [&isize, &imode](int64_t n) -> void {
-		cc.c =   n & ~((1<<36) - 1);
-		cc.z = !(n &= ((1<<36) - 1));
-		switch(imode) {
-		    case DR:
-			d[ireg].n = n;
+		    } else if((opcode&077) == 072) {
+			eamode = Absolute;
+			instr.execs(6);
+			eaddr = addr(instr.uword(), instr.ulong());
 			break;
-		    case EA:
-			Byte* dst = mem(ea, isize/9);
-			if(!dst)
-			    throw Trap(2, ea);
-			if(isize >= 36)
-			    write4(dst, idata);
-			else if(isize >= 18)
-			    write2(dst, idata);
-			else
-			    write1(dst, idata);
-		    default:
-			throw Trap(3, pc);
-		}
-	    };
-
-	    auto sresult = [&isize, &imode](int64_t n) -> void {
-		int64_t sign = 1 << (isize-1);
-		cc.v = false;
-		if(n<0) {
-		    cc.n = true;
-		    n = -n;
-		    if(n >= sign) {
-			n = sign;
-			cc.v = true;
+		    } else if((opcode&077) != 070) {
+			throw Fault{ EINVAL, pc };
 		    }
-		    n |= sign;
-		} else if(n >= sign) {
-		    cc.n = false;
-		    n = sign;
-		    cc.v = true;
+		    ereg = 8;
+		    // fallthrough
+		  case 060:
+		    instr.execs(2);
+		    ext = instr.uword();
+		    if(ext & (1<<17)) // has index
+			index = sex_<36>(d[(ext>>9) & 7].data) * (1 << ((ext>>12)&3));
+		    if((ext>>15) > 1) { // has offset
+			if(ext & (1<<14)) {
+			    instr.execs(2);
+			    offset = instr.sword();
+			}
+			disp = sex_<9>(ext & 0777);
+		    } else
+			offset = sex_<9>(ext & 0777);
+		    if(ext & (1<<15)) // memory indirect
+			eamode = ((ext>>15) == 7)? PostIndex: PreIndex;
+		    break;
 		}
-		result(n);
-	    };
-
-	    /*  */ IMATCH( 
-	    } else IMATCH( 
-	    } else
-		throw Trap(3, pc);
-
-	    // write results
-	    if(eawrite) switch(imode) {
-		case DR:
-		    d[ireg].n = idata;
-		    break;
-		case EA:
-		    Byte* d = mem(ea, isize, true);
-		    if(isize > 36)
-			write4(d, idata);
-		    else if(isize > 18)
-			write2(d, idata);
-		    else
-			write1(d, idata);
-		    break;
-		default:
-		    throw Trap(3, pc);
 	    }
 
-	    // everything worked, fixup
-	    if(predec)
-		a[areg].n -= isize/9;
-	    if(postinc)
-		a[areg].n += isize/9;
-	    pc.addr += ilen;
+	    if(memea && eamode != Absolute) {
+		if(ereg < 8) {
+		    if(eamode == PreDec)
+			a[ereg].addr -= (1<<easz);
+		    eaddr = addr(a[ereg]);
+		    if(eamode == PostInc)
+			a[ereg].addr += (1<<easz);
+		} else
+		    eaddr = addr(pc);
+		eaddr += offset;
+		if(eamode == PostIndex) {
+		    disp += index;
+		} else
+		    eaddr += index;
+		if(eamode == PostIndex || eamode == PreIndex) {
+		    eaddr.reads(6);
+		    uword_t seg = eaddr.uword();
+		    eaddr = addr(seg, eaddr.ulong());
+		}
+		eaddr += disp;
+	    }
 
+	}
 
-	} catch(const Trap& t) {
-	    pending = t.num;
-	    fault = t.ea;
-	} catch(const Halt&) {
+	static auto ea_read = [&](void) {
+	    Addr rea = eaddr;
+	    if(memea) {
+		switch(easz) {
+		  case 0:
+		    rea.reads(1);
+		    uinput = rea.ubyte();
+		    sinput = signed_<9>(uinput);
+		    break;
+		  case 1:
+		    rea.reads(2);
+		    uinput = rea.uword();
+		    sinput = signed_<18>(uinput);
+		    break;
+		  default:
+		    rea.reads(4);
+		    uinput = rea.ulong();
+		    sinput = signed_<36>(uinput);
+		    break;
+		}
+	    } else
+		sinput = signed_(ea_bits, uinput);
+	};
+
+	static auto ea_uwrite = [&](int_t n) {
+	    if(memea) switch(easz) {
+	      case 0:
+		eaddr.writes(1);
+		eaddr.ubyte(n);
+		break;
+	      case 1:
+		eaddr.writes(2);
+		eaddr.uword(n);
+		break;
+	      default:
+		eaddr.writes(4);
+		eaddr.ulong(n);
+		break;
+	    } else if(eamode == DReg)
+		d[ereg].data = unsigned_<36>(n);
+	    else
+		throw Fault{ EINVAL, pc };
+	};
+
+	static auto ea_swrite = [&](int_t n) {
+	    if(memea) switch(easz) {
+	      case 0:
+		eaddr.writes(1);
+		eaddr.sbyte(n);
+		break;
+	      case 1:
+		eaddr.writes(2);
+		eaddr.sword(n);
+		break;
+	      default:
+		eaddr.writes(4);
+		eaddr.slong(n);
+		break;
+	    } else if(eamode == DReg)
+		d[ereg].data = signed_<36>(n);
+	    else
+		throw Fault{ EINVAL, pc };
+	};
+
+	bool jump = false;
+	// decode instructions here
+
+	if(!jump) {
+	    pc.addr = instr.addr;
+	};
+
+    } catch(const Fault& f) {
+	if(f.trap == ELOOP) // Double fault.  Give up.
 	    halted = true;
+	else {
+	    pending |= 1l << int(f.trap);
+	    fault = f.fault;
 	}
     }
 }
 
-const Segment& CPU::seg(const AReg& ea)
-{
-    Segment& s = segs[ea.seg&15];
-    if(!s.valid || s.seg!=ea.seg) {
-	AReg	sptr;
-	str.seg = 2;
-	sptr.addr = ea.seg<<4;
-	Byte*	seg_addr = mem(sptr, 16);
-	if(!seg_addr)
-	    throw Trap(2, ea);
-	s.seg = ea.seg;
-	s.valid = true;
-	s.addr = read4(seg_addr);
-	s.len = read4(seg_addr+4);
-	uint32_t flags = read2(seg_addr+8);
-	s.super = flags&0001;
-	s.read  = flags&0002;
-	s.write = flags&0004;
-	s.exec  = flags&0010;
-
-    }
-    return s;
-}
-
-Byte* CPU::mem(const AReg& ea, size_t len, bool write)
-{
-    const Segment& s = seg(ea);
-    if(	   (write? s.write: s.read)
-	&& (sm.super || !s.super)
-	&& (ea.addr+len < s.len) )
-	return m.mem + ea.addr;
-    return 0;
-}
-
-
 } // namespace Nightmare
+
+
+
+
+int main(int, char**) {
+    Nightmare::CPU	cpu;
+
+    cpu.mem_ = new Nightmare::byte_t[cpu.mem_alloc_ = 640*1024]; // 640K ought to be enough for anyone.  :-)
+    if(!cpu.reset())
+	cpu.run();
+}
+
