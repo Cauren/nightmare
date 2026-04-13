@@ -135,8 +135,10 @@ namespace nas {
 	    return;
 	// std::cout << n.debug() << std::endl;
 	if(n == Node::Line) {
-	    if(n.size()>0 && n[0])
+	    if(n.size()>0 && n[0]) {
 		src->label = n[0];
+		src->labeled = true;
+	    }
 	    if(n.size()>1 && n[1])
 		src->op = n[1];
 	    if(n.size()>2 && n[2]) {

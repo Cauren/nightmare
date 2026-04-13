@@ -132,6 +132,7 @@ namespace nas {
 	Node			entire = nullptr;
 	Node			label = nullptr;
 	Node			op = nullptr;
+	bool			labeled = false;
 	std::vector<Node>	operands;
 
 				SourceLine(InputFile* i, size_t ln, const std::string& t):

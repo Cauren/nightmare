@@ -2,6 +2,7 @@
 #include <format>
 #include <iostream>
 #include <vector>
+#include <list>
 #include <map>
 #include <utility>
 
@@ -10,6 +11,12 @@
 
 using nas::Node;
 using nas::SourceLine;
+
+struct Range_ {
+    uint64_t			from;
+    uint64_t			to;
+    std::vector<uint16_t>	bytes;
+};
 
 struct Segment {
     enum Type {
@@ -21,6 +28,8 @@ struct Segment {
     const std::string		segname;
     const std::string		filename;
     uint64_t			addr;
+    uint64_t			length = 0;
+    std::list<Range_>		data;
 };
 
 struct Symbol {
@@ -97,7 +106,7 @@ struct Assembly {
 
     Segment*			cseg = nullptr;
 
-    bool			pass1(int, const char**);
+    bool			assemble(int, const char**);
 
     Value			eval(const Node&);
     uint16_t			ealen(const Node&);
@@ -650,6 +659,11 @@ struct i_SEG: public Instruction {
 
     i_SEG(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
+    bool align(void)
+    {
+	return false;
+    };
+
     bool pass1(Assembly& a)
     {
 	Segment* seg = nullptr;
@@ -658,6 +672,7 @@ struct i_SEG: public Instruction {
 	    return src.err(src.operands[1], "Too many arguments for SEG directive");
 
 	if(src.label) {
+	    src.labeled = false;
 	    Symbol* sym = a.find(src.label.str());
 	    if(sym)
 		return src.err(src.label, "Multiply defined identifier '{}'", src.label.str());
@@ -686,7 +701,7 @@ struct i_SEG: public Instruction {
 			sym = a.make(src.label.str());
 			sym->type = Symbol::Seg;
 			seg = sym->seg = &a.segs.emplace_back(
-			    Segment{ Segment::Literal, false, 0, src.label.str(), src.operands[0].str(), 0 }
+			    Segment{ Segment::Literal, false, uint32_t(v.value), src.label.str(), src.operands[0].str(), 0 }
 			);
 			break;
 		      case Value::Seg:
@@ -716,6 +731,7 @@ struct i_SEG: public Instruction {
 
 	return false;
     };
+
 };
 
 struct i_ORG: public Instruction {
@@ -724,6 +740,11 @@ struct i_ORG: public Instruction {
     };
 
     i_ORG(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    bool align(void)
+    {
+	return false;
+    };
 
     bool pass1(Assembly& a)
     {
@@ -748,7 +769,7 @@ struct i_ORG: public Instruction {
 	    a.cseg = seg;
 	}
 	return false;
-    }
+    };
 
 };
 
@@ -759,12 +780,18 @@ struct i_EQU: public Instruction {
 
     i_EQU(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
+    bool align(void)
+    {
+	return false;
+    };
+
     bool pass1(Assembly& a)
     {
 	if(needs(1))
 	    return true;
 	if(!src.label)
 	    return src.err(src.op, "EQU requires a label to define");
+	src.labeled = false;
 	Symbol* sym = a.find(src.label.str());
 	if(sym)
 	    return src.err(src.label, "Multiply defined identifier '{}'", src.label.str());
@@ -797,6 +824,24 @@ struct i_EQU: public Instruction {
 	return false;
     };
 
+};
+
+struct i_DS: public Instruction {
+    inline static Opcode::List<i_DS> opcodes = {
+	{ "DS",		0 },
+    };
+
+    i_DS(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    bool pass1(Assembly&)
+    {
+	return false;
+    };
+
+    bool pass2(Assembly&)
+    {
+	return false;
+    };
 };
 
 struct i_DAT: public Instruction {
@@ -922,6 +967,9 @@ struct i_DA: public Instruction {
 	    if(v.type == Value::Invalid)
 		eerr(v);
 	    int32_t	segno = 0;
+
+	    if(v.type == Value::Address && v.seg)
+		segno = v.seg->value;
 
 	    word(segno);
 	    word(v.value);
@@ -1146,14 +1194,14 @@ void SourceLine::print(bool reset = false)
     if(errs.size())
 	debug();
     for(const auto& e: errs) {
-	std::cout << std::format("** ERROR:\t  {}:{}: {}", file->name, line, e.msg) << std::endl;
-	std::cout << "**\t\t\t\t" << std::string(e.from, ' ') << "⬐" << std::string(e.to-e.from, '-') << std::endl;
+	std::cerr << std::format("** ERROR:\t  {}:{}: {}", file->name, line, e.msg) << std::endl;
+	std::cerr << "**\t\t\t\t" << std::string(e.from, ' ') << "⬐" << std::string(e.to-e.from, '-') << std::endl;
     }
 
     if(insn && insn->bytes.size()>0) {
 	if(lseg != insn->seg) {
 	    lseg = insn->seg;
-	    std::cout << "⮮[" << lseg->segname << "]" << std::endl;
+	    std::cerr << "⮮[" << lseg->segname << "]" << std::endl;
 	}
 
 	auto b = insn->bytes.begin();
@@ -1173,15 +1221,15 @@ void SourceLine::print(bool reset = false)
 	    return rv;
 	};
 
-	std::cout << std::format("   {:012o} {:<15s} {}", insn->addr, more(), text);
+	std::cerr << std::format("   {:012o} {:<15s} {}", insn->addr, more(), text);
 	while(b != insn->bytes.end())
-	    std::cout << std::format("                {:<15s}", more()) << std::endl;
+	    std::cerr << std::format("                {:<15s}", more()) << std::endl;
     } else {
-	std::cout << "\t\t\t\t" << text;
+	std::cerr << "\t\t\t\t" << text;
     }
 }
 
-bool Assembly::pass1(int argc, const char** argv)
+bool Assembly::assemble(int argc, const char** argv)
 {
     if(!nas::parser(source, argc, argv))
 	return false;
@@ -1203,6 +1251,24 @@ bool Assembly::pass1(int argc, const char** argv)
 
 	if(i) {
 	    i->pass1(*this);
+
+	    if(i->align() && (cseg->addr&1))
+		cseg->addr++;
+
+	    if(sl.labeled) {
+		Symbol* sym = find(sl.label.str());
+		if(sym)
+		    sl.err(sl.label, "Multiply defined identifier '{}'", sl.label.str());
+		else {
+		    sym = make(sl.label.str());
+		    sym->type = Symbol::Addr;
+		    sym->unresolved = false;
+		    sym->seg = cseg;
+		    sym->value = cseg->addr;
+		}
+
+	    }
+
 	    if(i->ilen) {
 		if(!cseg) {
 		    sl.err(sl.entire, "Fatal: No segment for code or data generation");
@@ -1211,24 +1277,8 @@ bool Assembly::pass1(int argc, const char** argv)
 		} else if(cseg->type == Segment::External) {
 		    sl.err(sl.entire, "Fatal: Code or data cannot be generated in external segments");
 		} else {
-		    if(i->align() && (cseg->addr&1))
-			cseg->addr++;
 		    i->seg = cseg;
 		    i->addr = cseg->addr;
-
-		    if(sl.label) {
-			Symbol* sym = find(sl.label.str());
-			if(sym)
-			    sl.err(sl.label, "Multiply defined identifier '{}'", sl.label.str());
-			else {
-			    sym = make(sl.label.str());
-			    sym->type = Symbol::Addr;
-			    sym->unresolved = false;
-			    sym->seg = cseg;
-			    sym->value = cseg->addr;
-			}
-
-		    }
 
 		    cseg->addr += i->ilen;
 		}
@@ -1239,10 +1289,14 @@ bool Assembly::pass1(int argc, const char** argv)
 		return 1;
 	    }
 	}
+
+	if(cseg && cseg->based && cseg->addr > cseg->length)
+	    cseg->length = cseg->addr;
     }
 
     // Pass 2
     bool fatal = false;
+    cseg = nullptr;
     for(auto& sl: source.lines) {
 	if(Instruction* i = sl.insn) {
 	    if(!i->pass2(*this)) {
@@ -1255,6 +1309,50 @@ bool Assembly::pass1(int argc, const char** argv)
 	    break;
     }
 
+    // collect output
+    for(auto& sl: source.lines)
+	if(Instruction* i = sl.insn) {
+	    if(!i->seg)
+		continue;
+	    Segment& seg = *i->seg;
+	    uint64_t from = i->addr;
+	    uint64_t to = i->addr+i->ilen;
+	    if(seg.data.empty()) {
+		seg.data.emplace_back(Range_{ from, to, i->bytes });
+	    } else for(auto si = seg.data.begin(); si!=seg.data.end(); si++) {
+		if(to < si->from)
+		    continue;
+		if((from>=si->from && from<si->to) || (from<si->from && to>si->from))
+		    throw std::format("Range overlap seg {} offsets {}-{} with {}-{}", seg.segname, from, to, si->from, si->to);
+		if(from == si->to) {
+		    si->bytes.insert(si->bytes.end(), i->bytes.begin(), i->bytes.end());
+		    si->to = to;
+		} else {
+		    seg.data.insert(si, Range_{from, to, i->bytes});
+		    si++;
+		}
+		auto sn = std::next(si);
+		if(sn != seg.data.end()) {
+		    if(si->to == sn->from) {
+			si->bytes.insert(si->bytes.end(), sn->bytes.begin(), sn->bytes.end());
+			si->to = sn->to;
+			seg.data.erase(sn);
+		    }
+		}
+		break;
+	    }
+	}
+
+    for(const auto& seg: segs) {
+	std::cout << std::format("SL{:06o}:{:09o}:{}", seg.value, seg.length, seg.segname) << std::endl;
+	for(const auto& r: seg.data) {
+	    std::cout << std::format("DD{:9o}", r.from);
+	    for(const auto& b: r.bytes)
+		std::cout << std::format(":{:03o}", b);
+	    std::cout << std::endl;
+	}
+    }
+
     return true;
 }
 
@@ -1262,6 +1360,6 @@ int main(int argc, const char** argv)
 {
     Assembly	as;
 
-    as.pass1(argc-1, argv+1);
+    as.assemble(argc-1, argv+1);
 }
 
