@@ -15,7 +15,7 @@ _root		seg	@777777
 		da	notrap_vec
 		da	notrap_vec
 
-		org	6 * (8+16+ 16)	; skip over all trap vectors
+		org	6 * (8+16+16)	; skip over all trap vectors
 
 kernel_stack	ds	256 * 6
 
