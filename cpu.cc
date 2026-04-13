@@ -3,11 +3,10 @@
 
 namespace Nightmare {
 
-
 CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
 {
     Segment& s = scache[segno&15];
-    super |= smr & SM::Super;
+    super |= smr & SU;
 
     if(!s.valid || s.seg!=segno) {
 	switch(segno) {
@@ -35,10 +34,9 @@ CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
 
 bool CPU::reset(void)
 {
-    smr = 0;
-    smr += SM::Super;
-    ir = 0777;
+    smr = SU | RST;
     ccr = 0;
+    ir = 0777;
 
     for(int i=0; i<16; i++)
 	scache[i].valid = false;
@@ -58,11 +56,11 @@ void CPU::trap(byte_t num, const AReg& faddr)
 {
     try {
 	AReg usp = a[7];
-	SM osmr = smr;
+	auto osmr = smr;
 
-	if(!(smr & SM::Super)) {
+	if(!(smr & SU)) {
 	    a[7] = ssp;
-	    smr += SM::Super;
+	    smr += SU;
 	}
 
 	Addr frame = addr(a[7]);
@@ -112,6 +110,37 @@ void CPU::rte(void)
 }
 #endif
 
+
+struct opmask_ {
+    uword_t	mask;
+    uword_t	bits;
+};
+
+static constexpr opmask_ operator ""_m(const char* d, size_t)
+{
+    opmask_ om = { 0, 0 };
+    int left=16;
+    char ch;
+    while(left && (ch=*d++)) switch(ch) {
+      case '0':
+      case '1':
+	om.mask = (om.mask<<1) | 1;
+	om.bits = (om.mask<<1) | (ch&1);
+	--left;
+	break;
+      case 'x':
+	om.mask <<= 1;
+	om.bits <<= 1;
+	--left;
+	break;
+    }
+    om.mask <<= left;
+    om.bits <<= left;
+    return om;
+}
+
+static constexpr bool operator == (const opmask_& m, uword_t o) { return (o&m.mask)==m.bits; };
+
 void CPU::run(void)
 {
     bool halted = false;
@@ -156,7 +185,7 @@ void CPU::run(void)
 	    // bit 17 set means there are EA fields on the opcode
 
 	    eamode = Indirect;
-	    if((opcode&0600000)==0400000 || (opcode&0760000)==0600000) // those have eam field
+	    if(opcode == "1"_m || opcode == "010'00x'xxx'0"_m) // those have eam field
 		easz = (opcode>>6) & 3;
 
 	    switch(easz) {
@@ -261,72 +290,300 @@ void CPU::run(void)
 
 	}
 
-	static auto ea_read = [&](void) {
+	static auto ea_readjust = [&](uword_t sz) -> void {
+	    if(eamode==PreDec) {
+		a[ereg].addr -= sz - (1<<easz);
+		eaddr.addr = a[ereg].addr;
+	    } else if(eamode==PostInc)
+		a[ereg].addr += sz - (1<<easz);
+	};
+
+	static auto ea_read = [&](void) -> void {
 	    Addr rea = eaddr;
 	    if(memea) {
 		switch(easz) {
 		  case 0:
 		    rea.reads(1);
 		    uinput = rea.ubyte();
-		    sinput = signed_<9>(uinput);
+		    sinput = sex_<9>(uinput);
 		    break;
 		  case 1:
 		    rea.reads(2);
 		    uinput = rea.uword();
-		    sinput = signed_<18>(uinput);
+		    sinput = sex_<18>(uinput);
 		    break;
 		  default:
 		    rea.reads(4);
 		    uinput = rea.ulong();
-		    sinput = signed_<36>(uinput);
+		    sinput = sex_<36>(uinput);
 		    break;
 		}
 	    } else
-		sinput = signed_(ea_bits, uinput);
+		sinput = sex_(ea_bits, uinput);
 	};
 
-	static auto ea_uwrite = [&](int_t n) {
-	    if(memea) switch(easz) {
+	static auto ea_uwrite = [&](int_t n) -> void {
+	    if(eamode == DReg) {
+		utest<36>(n);
+		d[ereg].data = unsigned_<36>(n);
+	    } else if(memea) switch(easz) {
 	      case 0:
+		utest<9>(n);
 		eaddr.writes(1);
 		eaddr.ubyte(n);
 		break;
 	      case 1:
+		utest<18>(n);
 		eaddr.writes(2);
 		eaddr.uword(n);
 		break;
 	      default:
+		utest<36>(n);
 		eaddr.writes(4);
 		eaddr.ulong(n);
 		break;
-	    } else if(eamode == DReg)
-		d[ereg].data = unsigned_<36>(n);
-	    else
+	    } else
 		throw Fault{ EINVAL, pc };
 	};
 
-	static auto ea_swrite = [&](int_t n) {
-	    if(memea) switch(easz) {
+	static auto ea_swrite = [&](int_t n) -> void {
+	    if(eamode == DReg) {
+		stest<36>(n);
+		d[ereg].data = signed_<36>(n);
+	    } else if(memea) switch(easz) {
 	      case 0:
+		stest<9>(n);
 		eaddr.writes(1);
 		eaddr.sbyte(n);
 		break;
 	      case 1:
+		stest<18>(n);
 		eaddr.writes(2);
 		eaddr.sword(n);
 		break;
 	      default:
+		stest<36>(n);
 		eaddr.writes(4);
 		eaddr.slong(n);
 		break;
-	    } else if(eamode == DReg)
-		d[ereg].data = signed_<36>(n);
-	    else
+	    } else
 		throw Fault{ EINVAL, pc };
 	};
 
+	static auto ea_test = [&](int_t n) -> void {
+	    if(eamode == DReg)
+		utest<36>(n);
+	    else switch(easz) {
+	      case 0: utest<9>(n); break;
+	      case 1: utest<18>(n); break;
+	      default: utest<36>(n); break;
+	    }
+	};
+
 	bool jump = false;
-	// decode instructions here
+
+	/*  */ if(opcode == "000'0xx'xxx"_m) {			// Bcc
+	    uint_t	dest = instr.addr;
+	    if(opcode == "000'01x"_m) {
+		instr.reads(2);
+		dest = instr.uword() << 9;
+		dest = instr.addr + sex_<27>(dest | (opcode & 0777));
+	    } else
+		dest = instr.addr + sex_<9>(opcode & 0777);
+	    switch((opcode>>9) & 017) {
+	      case 000: {					// BSR (no point to BRN)
+		  jump = true;
+		  Addr tos = addr(a[7]);
+		  tos.writes(6);
+		  tos.uword(pc.seg);
+		  tos.ulong(instr.addr);
+		  a[7].addr += 6;
+		  break;
+	      }
+	      case 001: jump = true; break;			// BRA
+	      case 002: jump = (ccr&Z); break;			// BEQ
+	      case 003: jump = !(ccr&Z); break;			// BNE
+	      case 004: jump = (ccr&C); break;			// BLO / BCC
+	      case 005: jump = !(ccr&C); break;			// BHS / BCS
+	      case 006: jump = (ccr&Z) || (ccr&C); break;	// BLS
+	      case 007: jump = !(ccr&Z) && !(ccr&C); break;	// BHI
+	      case 010: jump = (ccr&N); break;			// BMI
+	      case 011: jump = !(ccr&N); break;			// BPL
+	      case 012: jump = (ccr&V); break;			// BLT / BVS
+	      case 013: jump = !(ccr&V); break;			// BGE / BVC
+	      case 014: jump = (ccr&V) || (ccr&Z); break;	// BLE
+	      case 015: jump = !(ccr&V) && !(ccr&Z); break;	// BGT
+	      default:
+		throw Fault{ EINVAL, pc };
+	    }
+	    if(jump)
+		pc.addr = dest;
+	} else if(opcode == "000'100'001"_m) {			// RTS
+	    a[7].addr -= 6;
+	    Addr frame = addr(a[7]);
+	    frame.reads(6);
+	    pc.seg = frame.uword();
+	    pc.addr = frame.ulong();
+	    jump = true;
+	} else if(opcode == "000'100'010"_m) {			// RTE
+	    if(!(smr&SU))
+		throw Fault{ EPERM, pc };
+	    a[7].addr -= 24;
+	    Addr frame = addr(a[7]);
+	    ssp = a[7];
+	    frame.reads(24);
+	    ccr = frame.uword();
+	    ir  = frame.uword();
+	    smr = frame.uword();
+	    frame.areg();
+	    a[7] = frame.areg();
+	    pc = frame.areg();
+	    jump = true;
+	} else if(opcode == "000'100'011'"_m) {			// TRAP
+	    pending |= 1l << ((opcode&017)+8);
+	} else if(opcode == "1xx"_m) {				// OP Dn,EA / OP EA,Dn
+	    bool todr = opcode & (1<<8);
+	    int op = (opcode>>12) & 037;
+	    int dreg = (opcode>>9) & 7;
+	    int_t sarg;
+	    uint_t uarg;
+
+	    if(todr) {
+		ea_read();
+		sarg = sinput;
+		uarg = uinput;
+		uinput = unsigned_<36>(d[dreg].data);
+		sinput = sex_<36>(d[dreg].data);
+		eamode = DReg;
+		ereg = dreg;
+	    } else {
+		uarg = unsigned_<36>(d[dreg].data);
+		sarg = sex_<36>(d[dreg].data);
+		// MOV and SEX do not need to read the destination
+		if(op > 1)
+		    ea_read();
+	    }
+	    switch(op) {
+	      case 000: ea_uwrite(uarg); break;			// MOV
+	      case 001: ea_swrite(sarg); break;			// SEX
+	      case 010: ea_swrite(sinput+sarg); break;		// ADD
+	      case 011: ea_swrite(sinput-sarg); break;		// SUB
+	      case 012: ea_uwrite(uinput+uarg+(ccr&C)); break;	// ADC
+	      case 013: ea_uwrite(uinput-uarg-(ccr&C)); break;	// SBC
+	      case 014: ea_uwrite(uinput&uarg); break;		// AND
+	      case 015: ea_uwrite(uinput|uarg); break;		// OR
+	      case 016: ea_uwrite(uinput^uarg); break;		// XOR
+	      case 017: ccr&C = uarg>uinput;			// CMP
+			ccr&V = sarg>sinput;
+			ccr&Z = (uinput==sinput)? (uinput==uarg): (sinput==sarg);
+			break;
+	      case 031: ea_uwrite(uinput&~(1l<<uarg)); break;	// BCLR
+	      case 032: ea_uwrite(uinput|(1l<<uarg)); break;	// BSET
+	      case 033: ea_test(uinput&(1l<<uarg)); break;	// BTST
+	      case 034: ea_swrite(sinput/(1ul<<uarg)); break;	// ASR
+	      case 035: ea_uwrite(uinput>>uarg);		// LSR
+			ccr&C = (uinput&1)!=0; break;
+	      case 036: ea_swrite(sinput<<uarg); break;		// ASL
+	      case 037: ea_uwrite(uinput<<uarg); break;		// LSL
+	      default:
+		throw Fault{ EINVAL, pc };
+	    }
+	} else if(opcode == "010'00x'xxx'0xx"_m) {	// OP EA
+	    int op = (opcode>>9) & 017;
+
+	    // CLR does not need to read the destination
+	    if(op > 0)
+		ea_read();
+	    switch(op) {
+	      case 000: ea_uwrite(0); break;			// CLR
+	      case 004: ea_test(uinput); break;			// TST
+	      case 005: ea_swrite(sinput+1); break;		// INC
+	      case 006: ea_swrite(sinput-1); break;		// DEC
+	      case 007: ea_swrite(-sinput); break;		// NEG
+	      case 010: ea_uwrite(~sinput); break;		// COM
+	      default:
+		throw Fault{ EINVAL, pc };
+	    }
+	} else if(opcode == "010'010'xxx'000"_m) {		// STS An,EA
+	    ea_readjust(2);
+	    eaddr.writes(2);
+	    eaddr.uword(a[(opcode>>9)&7].seg);
+	} else if(opcode == "010'010'xxx'000"_m) {		// LDS EA,An
+	    ea_readjust(2);
+	    eaddr.reads(2);
+	    a[(opcode>>9)&7].seg = eaddr.uword();
+	} else if(opcode == "010'010'xxx'000"_m) {		// STA An,EA
+	    ea_readjust(6);
+	    eaddr.writes(6);
+	    eaddr.uword(a[(opcode>>9)&7].seg);
+	    eaddr.ulong(a[(opcode>>9)&7].addr);
+	} else if(opcode == "010'010'xxx'000"_m) {		// LDA EA,An
+	    ea_readjust(6);
+	    eaddr.reads(6);
+	    a[(opcode>>9)&7].seg = eaddr.uword();
+	    a[(opcode>>9)&7].addr = eaddr.ulong();
+	} else if(opcode == "010'010'xxx'000"_m) {		// LEA EA,An
+	    if(!eaddr)
+		throw Fault{ EFAULT, pc };
+	    a[(opcode>>9)&7].seg = eaddr.seg->seg;
+	    a[(opcode>>9)&7].addr = eaddr.addr;
+	} else if(opcode == "011'000'000'x00"_m) {		// MOVM
+	    uword_t	regs = instr.uword();
+	    uword_t	size = 0;
+	    for(int i=0; i<18; i++)
+		if(regs & (1<<i))
+		    size += (i>14)? 2: ((i>7)? 6: 4);
+	    ea_readjust(size);
+	    if(regs&(3<<16) && !(smr&SU))
+		throw Fault { EPERM, pc };
+	    if(opcode & (1<<8)) {
+		eaddr.reads(size);
+		for(int i=0; i<18; i++) if(regs & (1<<i)) {
+		    if(i<8) {
+			d[i].data = eaddr.ulong();
+		    } else if(i<15) {
+			a[i&7].seg = eaddr.uword();
+			a[i&7].addr = eaddr.ulong();
+		    } else switch(i) {
+		      case 15:	ccr = eaddr.uword(); break;
+		      case 16:	ir  = eaddr.uword(); break;
+		      case 17:	smr = eaddr.uword(); break;
+		    }
+		}
+	    } else {
+		eaddr.writes(size);
+		for(int i=0; i<18; i++) if(regs & (1<<i)) {
+		    if(i<8) {
+			eaddr.ulong(d[i].data);
+		    } else if(i<15) {
+			eaddr.uword(a[i&7].seg);
+			eaddr.ulong(a[i&7].addr);
+		    } else switch(i) {
+		      case 15:	eaddr.uword(uword_t(ccr)); break;
+		      case 16:	eaddr.uword(uword_t(ir)); break;
+		      case 17:	eaddr.uword(uword_t(smr)); break;
+		    }
+		}
+	    }
+	} else if(opcode == "011'000'000'001"_m) {		// JSR
+	    if(!eaddr)
+		throw Fault{ EFAULT, pc };
+	    Addr tos = addr(a[7]);
+	    tos.writes(6);
+	    tos.uword(pc.seg);
+	    tos.ulong(instr.addr);
+	    a[7].addr += 6;
+	    jump = true;
+	    pc.seg = eaddr.seg->seg;
+	    pc.addr = eaddr.addr;
+	} else if(opcode == "011'000'000'010"_m) {		// JMP
+	    jump = true;
+	    if(!eaddr)
+		throw Fault{ EFAULT, pc };
+	    pc.seg = eaddr.seg->seg;
+	    pc.addr = eaddr.addr;
+	} else
+	    throw Fault{ EINVAL, pc };
 
 	if(!jump) {
 	    pc.addr = instr.addr;

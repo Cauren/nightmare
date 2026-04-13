@@ -14,6 +14,15 @@ namespace Nightmare {
     // smallest usigned integral type that can hold a 9-bit byte
     typedef uint_fast16_t	byte_t;
 
+    template<uint_t bits> constexpr bool overflow_(int_t n) {
+	int_t sign = 1l << (bits-1);
+	return n<=-sign || n>=sign;
+    }
+
+    template<uint_t bits> constexpr bool carry_(int_t n) {
+	return n & ~((1l<<bits)-1);
+    }
+
     template<uint_t bits> constexpr uint_t signed_(int_t n) {
 	uint_t sign = 1l << (bits-1);
 
@@ -123,38 +132,83 @@ namespace Nightmare {
 		int_t			data;
 	    };
 
+	    template<typename BIT> struct Bitreg {
+		uword_t			bits;
+
+		struct Bref {
+		    Bitreg&		reg;
+		    uword_t		bit;
+
+					operator bool (void) const		{ return reg.bits & bit; };
+		    bool		operator ++ (int)			{ reg.bits |= bit; return true; };
+		    bool		operator -- (int)			{ reg.bits &= ~bit; return false; };
+		    bool		operator = (bool b)			{ if(b) reg.bits |= bit;
+										  else  reg.bits &= ~bit;
+										  return b; };
+		};
+		struct Bits {
+		    uword_t		bits;
+
+					Bits(void): bits(0)			{ };
+					Bits(BIT b)				{ bits = 1<<int(b); };
+					Bits(uword_t bi)			{ bits = bi; };
+					Bits(Bits&&) = default;
+					Bits(const Bits&) = default;
+
+		    Bits		operator | (const Bits& bi) const	{ return bits|bi.bits; };
+		};
+
+					Bitreg(void): bits(0)			{ };
+					Bitreg(uword_t b)			{ bits = b; };
+					Bitreg(Bitreg&&) = default;
+					Bitreg(const Bitreg&) = default;
+
+		Bitreg&			operator = (BIT b)			{ bits = 1<<int(b); return *this; };
+		Bitreg&			operator = (Bits b)			{ bits = b.bits; return *this; };
+		Bitreg&			operator += (BIT b)			{ bits |= 1<<int(b); return *this; };
+		Bitreg&			operator += (Bits b)			{ bits |= b.bits; return *this; };
+		Bitreg&			operator -= (BIT b)			{ bits &= ~(1<<int(b)); return *this; };
+		Bitreg&			operator -= (Bits b)			{ bits &= ~b.bits; return *this; };
+		Bitreg&			operator = (Bitreg&&) = default;
+		Bitreg&			operator = (const Bitreg&) = default;
+		Bitreg&			operator = (uword_t b)			{ bits = b; return *this; };
+
+					operator uword_t (void) const		{ return bits; };
+		Bref			operator & (BIT b)			{ return { *this, uword_t(1)<<int(b) }; };
+		const Bref		operator & (BIT b) const		{ return { *this, uword_t(1)<<int(b) }; };
+	    };
+
 	    AReg			pc;
 	    DReg			d[8];
 	    AReg			a[8];
 	    AReg			ssp;
-	    struct CC {
-		enum Bits { Z, C, V, N, };
-		uword_t				reg;
-
-		CC&			operator = (uword_t r)			{ reg = r; return *this; };
-		CC&			operator += (Bits b)			{ reg |= (1<<int(b)); return *this; };
-		CC&			operator -= (Bits b)			{ reg &= ~(1<<int(b)); return *this; };
-		bool			operator & (Bits b)			{ return reg & (1<<int(b)); };
-
-					operator uword_t(void) const		{ return reg; };
-	    }				ccr;
+	    enum CCBits			{ Z, C, V, N, };
+	    enum SMBits			{ SU, RST, FAULT };
+	    Bitreg<CCBits>		ccr;
+	    Bitreg<SMBits>		smr;
 	    uword_t			ir;
-	    struct SM {
-		enum Bits { Super };
-		uword_t				reg;
 
-		SM&			operator = (uword_t r)			{ reg = r; return *this; };
-		SM&			operator += (Bits b)			{ reg |= (1<<int(b)); return *this; };
-		SM&			operator -= (Bits b)			{ reg &= ~(1<<int(b)); return *this; };
-		bool			operator & (Bits b)			{ return reg & (1<<int(b)); };
-
-					operator uword_t(void) const		{ return reg; };
-	    }				smr;
 	    uint_t			segtable;
 
 	    Segment			scache[16];
 	    uint64_t			pending;
 	    AReg			fault;
+
+	    template<uint_t bits> void utest(int_t v) {
+		int_t sign = 1l << (bits-1);
+		ccr&Z = v==0;
+		ccr&V = v==sign;
+		ccr&N = (v & sign) != 0;
+		ccr&C = (v & ~(1l<<bits));
+	    };
+
+	    template<uint_t bits> void stest(int_t v) {
+		int_t sign = 1l << (bits-1);
+		ccr&Z = v==0;
+		ccr&N = v<0;
+		ccr&V = v<=-sign || v>=sign;
+		ccr&C = (v & ~(1l<<bits));
+	    };
 
 	    Addr			addr(uword_t sn, uint_t a, bool super=false);
 	    Addr			addr(const AReg& ar)			{ return addr(ar.seg, ar.addr); };
@@ -172,6 +226,12 @@ namespace Nightmare {
     };
 
 
+};
+
+template<typename BIT>
+Nightmare::CPU::Bitreg<BIT>::Bits operator | (BIT b1, BIT b2)
+{
+    return typename Nightmare::CPU::Bitreg<BIT>::Bits(b1) | b2;
 };
 
 
@@ -221,18 +281,18 @@ eam
 3	6 bit #imm
 
   17  16  15  14  13  12  11  10  9   8   7   6   5   4   3   2   1   0
-| 1   0 |      op       |     dr    | d |  eam  |  ea.type  |   ea.reg  |	OP ea,dr  dr,ea
-| 1   1   0   0   0 |      op       | 0 |  eam  |  ea.type  |   ea.reg  |	OP ea
+| 1 |         op        |     dr    | d |  eam  |  ea.type  |   ea.reg  |	OP ea,dr  dr,ea
 
-| 1   1   0   0   1   0 |     ar    | 0   0   0 |  ea.type  |   ea.reg  |	STS ar,ea
-| 1   1   0   0   1   0 |     ar    | 1   0   0 |  ea.type  |   ea.reg  |	LDS ea,ar
-| 1   1   0   0   1   0 |     ar    | 0   0   1 |  ea.type  |   ea.reg  |	STA ar,ea
-| 1   1   0   0   1   0 |     ar    | 1   0   1 |  ea.type  |   ea.reg  |	LDA ea,ar
-| 1   1   0   0   1   0 |     ar    | 1   1   0 |  ea.type  |   ea.reg  |	LEA ea,ar
+| 0   1   0   0   0 |      op       | 0 |  eam  |  ea.type  |   ea.reg  |	OP ea
+| 0   1   0   0   1   0 |     ar    | 0   0   0 |  ea.type  |   ea.reg  |	STS ar,ea
+| 0   1   0   0   1   0 |     ar    | 1   0   0 |  ea.type  |   ea.reg  |	LDS ea,ar
+| 0   1   0   0   1   0 |     ar    | 0   0   1 |  ea.type  |   ea.reg  |	STA ar,ea
+| 0   1   0   0   1   0 |     ar    | 1   0   1 |  ea.type  |   ea.reg  |	LDA ea,ar
+| 0   1   0   0   1   0 |     ar    | 1   1   0 |  ea.type  |   ea.reg  |	LEA ea,ar
 
-| 1   1   1   0   0   0   0   0   0 | d | 0   0 |  ea.type  |   ea.reg  |	MOVM regs...,ea  ea,regs...
-| 1   1   1   0   0   0   0   0   1   0   0   0 |  ea.type  |   ea.reg  |	JSR ea
-| 1   1   1   0   0   0   0   1   0   0   0   0 |  ea.type  |   ea.reg  |	JMP ea
+| 0   1   1   0   0   0   0   0   0 | d | 0   0 |  ea.type  |   ea.reg  |	MOVM regs...,ea  ea,regs...
+| 0   1   1   0   0   0   0   0   0   0   0   1 |  ea.type  |   ea.reg  |	JSR ea
+| 0   1   1   0   0   0   0   0   0   0   1   0 |  ea.type  |   ea.reg  |	JMP ea
 
 | 0   0   0   0   0 |      xx       |                 r9                |	bxx r9
 | 0   0   0   0   1 |      xx       |                 r9		|	bxx r27
