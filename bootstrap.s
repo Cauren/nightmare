@@ -2,7 +2,14 @@
 
 _segmap		seg	@777776
 _root		seg	@777777
+_uarea		seg	4
 
+num_segs	equ	32
+
+segmap		ds	16*num_segs
+u_pid		ds	2
+
+		seg	_root
 		org	0
 
 * CPU faults vectors (8)
@@ -18,7 +25,7 @@ _root		seg	@777777
 
 		org	6 * (8+16+16)	; skip over all trap vectors
 
-context		dl	0
+context		da	0
 init_fname	db	"init.x",0
 
 kernel_stack	ds	256 * 6
@@ -26,12 +33,15 @@ kernel_stack	ds	256 * 6
 reset_vec	lea	kernel_stack,a7
 		mov	#4*1024,d1
 		mov	#0,d0
-		trap	#15
-		mov	d0,context
-		ssma	d0
-		ssml	#16.w
-		lea	_segmap:0,a6
+		trap	#15		; kmalloc
+		lea	context,a1
+		mov	a0,(a1)
+		ssma	(2,a1)
+		mov	#num_segs,d0
+		ssml	d0
+		lsl	#4,d0
+.1		clr	(a0)+
+		dec	d0
+		bne	.1b
 
-		lea	init_fname,a0
-		mov	#1,d0
-		trap	#15
+		* initialize segmap for init process
