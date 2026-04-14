@@ -1204,7 +1204,6 @@ struct i_IMM9: public Instruction {
 
     bool pass1(Assembly& a)
     {
-	src.debug();
 	if(src.operands.size() == 1) {
 	    if(src.operands[0]!=Node::EA || src.operands[0].eatype()!=Node::Immed)
 		return src.err(src.operands[0], "{} only accepts an immediate operand", src.op.str());
