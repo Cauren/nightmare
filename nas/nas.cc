@@ -1301,7 +1301,8 @@ struct i_RLIST: public i_one_ea {
 };
 
 
-static bool		printout = false;
+static bool	printout = false;
+static bool	debug = false;
 
 void SourceLine::print(std::ostream& listing, bool reset = false)
 {
@@ -1489,6 +1490,14 @@ bool Assembly::assemble(int argc, const char** argv)
 	}
 	object << std::endl;
     }
+    if(debug) for(auto& sl: source.lines)
+	if(Instruction* i = sl.insn) {
+	    if(!i->seg || !i->ilen)
+		continue;
+	    object << std::format("GS{:06o}:{:09o}:{:o}:{}:{}:{}",
+		i->seg->value, i->addr, i->ilen,
+		i->src.file->name, i->src.line, i->src.text);
+	}
 
     return true;
 }
@@ -1499,8 +1508,11 @@ int main(int argc, const char** argv)
     bool of = false;
     std::ostream* ofile = nullptr;
 
-    while((opt = getopt(argc, (char*const*)(argv), "lo:")) >= 0)
+    while((opt = getopt(argc, (char*const*)(argv), "glo:")) >= 0)
 	switch(opt) {
+	  case 'g':
+	    debug = true;
+	    break;
 	  case 'l':
 	    printout = true;
 	    break;
@@ -1524,5 +1536,8 @@ int main(int argc, const char** argv)
     Assembly	as(ofile? *ofile: std::cout);
 
     as.assemble(argc-optind, argv+optind);
+
+    if(ofile)
+	delete ofile;
 }
 
