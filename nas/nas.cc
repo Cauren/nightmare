@@ -703,6 +703,7 @@ struct i_SEG: public Instruction {
 			seg = sym->seg = &a.segs.emplace_back(
 			    Segment{ Segment::Literal, false, uint32_t(v.value), src.label.str(), src.operands[0].str(), 0 }
 			);
+			sym->unresolved = false;
 			break;
 		      case Value::Seg:
 		      case Value::Address:
@@ -1024,13 +1025,27 @@ struct i_ea_reg: public i_one_ea {
 struct i_EAR: public i_ea_reg {
     inline static Opcode::List<i_EAR> opcodes = {
 	{ "MOV",	0400000 },
-	{ "ADD",	0410000 },
-	{ "SUB",	0420000 },
-	{ "LEA",	0600600 },
-	{ "LDA",	0600500 },
-	{ "LDS",	0600400 },
-	{ "STA",	0610500 },
-	{ "STS",	0610400 },
+	{ "SEX",	0410000 },
+	{ "ADD",	0420000 },
+	{ "SUB",	0430000 },
+	{ "ADC",	0440000 },
+	{ "SBC",	0450000 },
+	{ "AND",	0460000 },
+	{ "OR",		0470000 },
+	{ "XOR",	0500000 },
+	{ "CMP",	0510000 },
+	{ "BCLR",	0710000 },
+	{ "BSET",	0720000 },
+	{ "BTST",	0730000 },
+	{ "ASR",	0740000 },
+	{ "LSR",	0750000 },
+	{ "ASL",	0760000 },
+	{ "LSL",	0770000 },
+	{ "LEA",	0220600 },
+	{ "LDA",	0220500 },
+	{ "LDS",	0220400 },
+	{ "STA",	0220100 },
+	{ "STS",	0220000 },
     };
 
     i_EAR(SourceLine& sl, uint32_t b): i_ea_reg(sl, b) { };
@@ -1053,15 +1068,26 @@ struct i_EAR: public i_ea_reg {
 
 struct i_UNARY: public i_one_ea {
     inline static Opcode::List<i_UNARY> opcodes = {
-	{ "CLR",	0600000 },
-	{ "DEC",	0601000 },
+	{ "CLR",	0200000 },
+	{ "TST",	0204000 },
+	{ "INC",	0205000 },
+	{ "DEC",	0206000 },
+	{ "NEG",	0207000 },
+	{ "COM",	0210000 },
+
+	{ "SSMA",	0300400 },
+	{ "SSML",	0300500 },
     };
 
     i_UNARY(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
 
     bool pass2(Assembly& a)
     {
-	if(a.ea(src.operands[0], ea, src))
+	bool unsized = true;
+
+	if((bits>>15) == 2)
+	    unsized = false;
+	if(a.ea(src.operands[0], ea, src, unsized))
 	    return true;
 
 	word(bits | ea.eabits);
@@ -1074,8 +1100,8 @@ struct i_UNARY: public i_one_ea {
 
 struct i_ADDR: public i_one_ea {
     inline static Opcode::List<i_ADDR> opcodes = {
-	{ "JSR",	0700000 },
-	{ "JMP",	0700100 },
+	{ "JSR",	0300100 },
+	{ "JMP",	0300200 },
     };
 
     i_ADDR(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
@@ -1095,13 +1121,77 @@ struct i_ADDR: public i_one_ea {
     };
 };
 
+struct i_REL: public Instruction {
+    inline static Opcode::List<i_REL> opcodes = {
+	{ "BSR",	0000000 },
+	{ "BRA",	0001000 },
+	{ "BEQ",	0002000 },
+	{ "BNE",	0003000 },
+	{ "BLO",	0004000 },
+	{ "BCC",	0004000 },
+	{ "BHS",	0005000 },
+	{ "BCS",	0005000 },
+	{ "BLS",	0006000 },
+	{ "BHI",	0007000 },
+	{ "BMI",	0010000 },
+	{ "BPL",	0011000 },
+	{ "BLT",	0012000 },
+	{ "BVS",	0012000 },
+	{ "BGE",	0013000 },
+	{ "BVC",	0013000 },
+	{ "BLE",	0014000 },
+	{ "BGT",	0015000 },
+    };
+
+    i_REL(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    bool pass1(Assembly& a)
+    {
+	if(needs(1))
+	    return true;
+
+	int osz = 1;
+	if(src.operands[0].size() && src.operands[0][0] == Node::Size) {
+	    osz = src.operands[0][0].val();
+	} else {
+	    // guess
+	    Value v = a.eval(src.operands[0]);
+	    if(!v.unresolved && a.cseg && abs((a.cseg->addr+2)-v.value) > 0377)
+		    osz = 3;
+	}
+
+	ilen = 2+(osz-1);
+	return true;
+    };
+
+    bool pass2(Assembly& a)
+    {
+	Value v = a.eval(src.operands[0]);
+	if(v.unresolved || v.type != Value::Address || v.seg!=seg)
+	    return src.err(src.operands[0], "Operand must resolve to an address within the same segment");
+	int64_t disp = v.value - (addr+ilen);
+	if(ilen==2) {
+	    if(abs(disp)>0377)
+		return src.err(src.operands[0], "Operand out of range of short branch");
+	    word(bits | signed_<9>(disp));
+	} else {
+	    if(overflow_<27>(disp))
+		return src.err(src.operands[0], "Operand out of range of long branch");
+	    disp = signed_<27>(disp);
+	    word(bits | (disp&0777));
+	    word(disp>>9);
+	}
+	return false;
+    };
+};
+
 struct i_IMM9: public Instruction {
     i_IMM9(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
     inline static Opcode::List<i_IMM9> opcodes = {
 	{ "RTS",	0041000 },
 	{ "RTE",	0042000 },
-	{ "TRAP",	0047000 },
+	{ "TRAP",	0043000 },
     };
 
     bool pass1(Assembly& a)
@@ -1137,7 +1227,7 @@ struct i_RLIST: public i_one_ea {
     i_RLIST(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
 
     inline static Opcode::List<i_RLIST> opcodes = {
-	{ "MOVM",	0620000 },
+	{ "MOVM",	0300000 },
     };
 
     uint32_t	reglist;
@@ -1221,9 +1311,9 @@ void SourceLine::print(bool reset = false)
 	    return rv;
 	};
 
-	std::cerr << std::format("   {:012o} {:<15s} {}", insn->addr, more(), text);
+	std::cerr << std::format("   {:012o} {:<16s}{}", insn->addr, more(), text);
 	while(b != insn->bytes.end())
-	    std::cerr << std::format("                {:<15s}", more()) << std::endl;
+	    std::cerr << std::format("                {:<16s}", more()) << std::endl;
     } else {
 	std::cerr << "\t\t\t\t" << text;
     }
@@ -1320,37 +1410,50 @@ bool Assembly::assemble(int argc, const char** argv)
 	    if(seg.data.empty()) {
 		seg.data.emplace_back(Range_{ from, to, i->bytes });
 	    } else for(auto si = seg.data.begin(); si!=seg.data.end(); si++) {
-		if(to < si->from)
-		    continue;
-		if((from>=si->from && from<si->to) || (from<si->from && to>si->from))
+		if((from<si->from && to>si->from) || (from>=si->from && from<si->to))
 		    throw std::format("Range overlap seg {} offsets {}-{} with {}-{}", seg.segname, from, to, si->from, si->to);
+		auto sn = std::next(si);
 		if(from == si->to) {
 		    si->bytes.insert(si->bytes.end(), i->bytes.begin(), i->bytes.end());
 		    si->to = to;
+		    if(sn != seg.data.end()) {
+			if(to == sn->from) {
+			    si->bytes.insert(si->bytes.end(), sn->bytes.begin(), sn->bytes.end());
+			    si->to = sn->to;
+			    seg.data.erase(sn);
+			}
+		    }
+		    break;
 		} else {
-		    seg.data.insert(si, Range_{from, to, i->bytes});
-		    si++;
-		}
-		auto sn = std::next(si);
-		if(sn != seg.data.end()) {
-		    if(si->to == sn->from) {
-			si->bytes.insert(si->bytes.end(), sn->bytes.begin(), sn->bytes.end());
-			si->to = sn->to;
-			seg.data.erase(sn);
+		    if(sn == seg.data.end()) {
+			seg.data.insert(sn, Range_{from, to, i->bytes});
+			break;
+		    }
+		    if(sn->from == to) {
+			sn->bytes.insert(sn->bytes.begin(), i->bytes.begin(), i->bytes.end());
+			sn->from = from;
+			break;
 		    }
 		}
-		break;
 	    }
 	}
 
     for(const auto& seg: segs) {
-	std::cout << std::format("SL{:06o}:{:09o}:{}", seg.value, seg.length, seg.segname) << std::endl;
+	std::cout << std::format("SL{:06o}:{:09o}:{}", seg.value, seg.length, seg.segname);
 	for(const auto& r: seg.data) {
-	    std::cout << std::format("DD{:9o}", r.from);
-	    for(const auto& b: r.bytes)
+	    int bytes = 0;
+	    uint64_t addr = r.from;
+	    for(const auto& b: r.bytes) {
+		if(!bytes)
+		    std::cout << std::endl << std::format("DD{:9o}", addr);
 		std::cout << std::format(":{:03o}", b);
-	    std::cout << std::endl;
+		if(++bytes > 29) {
+		    addr += bytes;
+		    bytes = 0;
+		}
+	    }
 	}
+	std::cout << std::endl;
     }
 
     return true;

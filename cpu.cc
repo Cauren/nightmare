@@ -508,21 +508,21 @@ void CPU::run(void)
 	    ea_readjust(2);
 	    eaddr.writes(2);
 	    eaddr.uword(a[(opcode>>9)&7].seg);
-	} else if(opcode == "010'010'xxx'000"_m) {		// LDS EA,An
+	} else if(opcode == "010'010'xxx'100"_m) {		// LDS EA,An
 	    ea_readjust(2);
 	    eaddr.reads(2);
 	    a[(opcode>>9)&7].seg = eaddr.uword();
-	} else if(opcode == "010'010'xxx'000"_m) {		// STA An,EA
+	} else if(opcode == "010'010'xxx'001"_m) {		// STA An,EA
 	    ea_readjust(6);
 	    eaddr.writes(6);
 	    eaddr.uword(a[(opcode>>9)&7].seg);
 	    eaddr.ulong(a[(opcode>>9)&7].addr);
-	} else if(opcode == "010'010'xxx'000"_m) {		// LDA EA,An
+	} else if(opcode == "010'010'xxx'101"_m) {		// LDA EA,An
 	    ea_readjust(6);
 	    eaddr.reads(6);
 	    a[(opcode>>9)&7].seg = eaddr.uword();
 	    a[(opcode>>9)&7].addr = eaddr.ulong();
-	} else if(opcode == "010'010'xxx'000"_m) {		// LEA EA,An
+	} else if(opcode == "010'010'xxx'110"_m) {		// LEA EA,An
 	    if(!eaddr)
 		throw Fault{ EFAULT, pc };
 	    a[(opcode>>9)&7].seg = eaddr.seg->seg;
@@ -582,8 +582,17 @@ void CPU::run(void)
 		throw Fault{ EFAULT, pc };
 	    pc.seg = eaddr.seg->seg;
 	    pc.addr = eaddr.addr;
+	} else if(opcode == "011'000'000'1xx"_m) {		// Sxxx
+	    if(!(smr&SU))
+		throw Fault { EPERM, pc };
+	    ea_read();
+	    switch((opcode>>6) & 3) {
+	      case 0: segmap = unsigned_<36>(uinput); break;	// SSMA
+	      case 1: segmap_len = unsigned_<18>(uinput); break;// SSML
+	      default:
+	        throw Fault{ EINVAL, pc };
+	    }
 	} else
-	    throw Fault{ EINVAL, pc };
 
 	if(!jump) {
 	    pc.addr = instr.addr;

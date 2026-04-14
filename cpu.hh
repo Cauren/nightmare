@@ -188,7 +188,8 @@ namespace Nightmare {
 	    Bitreg<SMBits>		smr;
 	    uword_t			ir;
 
-	    uint_t			segtable;
+	    uint_t			segmap;
+	    uword_t			segmap_len;
 
 	    Segment			scache[16];
 	    uint64_t			pending;
@@ -293,13 +294,14 @@ eam
 | 0   1   1   0   0   0   0   0   0 | d | 0   0 |  ea.type  |   ea.reg  |	MOVM regs...,ea  ea,regs...
 | 0   1   1   0   0   0   0   0   0   0   0   1 |  ea.type  |   ea.reg  |	JSR ea
 | 0   1   1   0   0   0   0   0   0   0   1   0 |  ea.type  |   ea.reg  |	JMP ea
+| 0   1   1   0   0   0   0   0   0   1   0   0 |  ea.type  |   ea.reg  |	SSMA ea
+| 0   1   1   0   0   0   0   0   0   1   0   1 |  ea.type  |   ea.reg  |	SSML ea
 
 | 0   0   0   0   0 |      xx       |                 r9                |	bxx r9
 | 0   0   0   0   1 |      xx       |                 r9		|	bxx r27
 | 0   0   0   1   0   0   0   0   1 |                 i9		|	rts #unwind9
 | 0   0   0   1   0   0   0   1   0 |                 i9		|	rte #unwind9
 | 0   0   0   1   0   0   0   1   1 |                 i9		|	trap #n
-
 
 
 ea type:

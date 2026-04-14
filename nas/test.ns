@@ -50,8 +50,9 @@ symbol		equ	.-reset_vec
 		lds	trapmap,a0
 		add	d0,(a1)
 		add	d1.w,d0
-		sub	(a3)+.b,d2
+l2		sub	(a3)+.b,d2
 		dec	-(a4)
+		bne	l2
 		clr	(-2,a1).b
 		clr	([5,a1])
 		clr	(6,a1,d2*2).w
@@ -61,3 +62,4 @@ symbol		equ	.-reset_vec
 		trap	#2
 		movm	d0,d1,d2,d3,a5,a6,ccr,(a7)+
 		movm	trapmap,a0,a1
+		bra	>reset_vec
