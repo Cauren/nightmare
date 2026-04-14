@@ -101,7 +101,7 @@ struct Instruction;
 struct Assembly {
     nas::Source			source;
 
-    std::vector<Segment>	segs;
+    std::vector<Segment*>	segs;
     std::map<std::string,Symbol>syms;
 
     Segment*			cseg = nullptr;
@@ -681,7 +681,7 @@ struct i_SEG: public Instruction {
 
 		sym = a.make(src.label.str());
 		sym->type = Symbol::Seg;
-		seg = sym->seg = &a.segs.emplace_back(Segment{ Segment::Relocatable, false, 0, src.label.str(), "", 0 });
+		seg = sym->seg = a.segs.emplace_back(new Segment{ Segment::Relocatable, false, 0, src.label.str(), "", 0 });
 		return false;
 
 	    } else {
@@ -689,8 +689,8 @@ struct i_SEG: public Instruction {
 		if(src.operands[0] == Node::StringLit) {
 		    sym = a.make(src.label.str());
 		    sym->type = Symbol::Seg;
-		    seg = sym->seg = &a.segs.emplace_back(
-			Segment{ Segment::External, false, 0, src.label.str(), src.operands[0].str(), 0 }
+		    seg = sym->seg = a.segs.emplace_back(
+			new Segment{ Segment::External, false, 0, src.label.str(), src.operands[0].str(), 0 }
 		    );
 		} else {
 		    Value v = a.eval(src.operands[0]);
@@ -700,8 +700,8 @@ struct i_SEG: public Instruction {
 		      case Value::Numeric:
 			sym = a.make(src.label.str());
 			sym->type = Symbol::Seg;
-			seg = sym->seg = &a.segs.emplace_back(
-			    Segment{ Segment::Literal, false, uint32_t(v.value), src.label.str(), src.operands[0].str(), 0 }
+			seg = sym->seg = a.segs.emplace_back(
+			    new Segment{ Segment::Literal, false, uint32_t(v.value), src.label.str(), src.operands[0].str(), 0 }
 			);
 			sym->unresolved = false;
 			break;
@@ -1439,8 +1439,8 @@ bool Assembly::assemble(int argc, const char** argv)
 	}
 
     for(const auto& seg: segs) {
-	std::cout << std::format("SL{:06o}:{:09o}:{}", seg.value, seg.length, seg.segname);
-	for(const auto& r: seg.data) {
+	std::cout << std::format("SL{:06o}:{:09o}:{}", seg->value, seg->length, seg->segname);
+	for(const auto& r: seg->data) {
 	    int bytes = 0;
 	    uint64_t addr = r.from;
 	    for(const auto& b: r.bytes) {
