@@ -46,6 +46,12 @@ struct Symbol {
     uint64_t			value = 0;
 };
 
+struct Local {
+    uint16_t			num;
+    uint64_t			addr;
+    Segment*			seg;
+};
+
 struct Value {
     enum Type {
 	Invalid, Numeric, Seg, Address,
@@ -108,7 +114,10 @@ struct Assembly {
     nas::Source			source;
 
     std::vector<Segment*>	segs;
-    std::map<std::string,Symbol>syms;
+    std::multimap<uint16_t, Local>
+				locals;
+    std::map<std::string, Symbol>
+				syms;
 
     Segment*			cseg = nullptr;
 
@@ -565,10 +574,28 @@ Value Assembly::eval(const Node& n)
       }
 
       case Node::String: {
-	  if(n.str() == ".") {
+	  if(n.str().c_str()[0] == '.') {
 	      if(!cseg || !cseg->based)
-		  return { std::string("Pseudo-label '.' is only meaningful within a local segment"), &n };
-	      return { Value::Address, false, int64_t(cseg->addr), cseg, Value::None };
+		  return { std::format("Pseudo-label '{}' is only meaningful within a local segment", n.str()), &n };
+	      if(n.str().c_str()[1] == 0)
+		  return { Value::Address, false, int64_t(cseg->addr), cseg, Value::None };
+	      char* fb;
+	      uint16_t num = strtoul(n.str().c_str()+1, &fb, 10);
+	      bool forward = (*fb=='f' || *fb=='F');
+	      auto range = locals.equal_range(num);
+	      if(forward) {
+		  for(auto i = range.first; i!=range.second; i++)
+		      if(i->second.seg==cseg && i->second.addr>=cseg->addr)
+			  return { Value::Address, false, int64_t(i->second.addr), cseg, Value::None };
+	      } else {
+		  auto i = range.second;
+		  while(i != range.first) {
+		      i = std::prev(i);
+		      if(i->second.seg==cseg && i->second.addr<cseg->addr)
+			  return { Value::Address, false, int64_t(i->second.addr), cseg, Value::None };
+		  }
+	      }
+	      return { Value::Address, true, 0, cseg, Value::None };
 	  }
 	  Symbol* sym = find(n.str());
 	  if(!sym)
@@ -1348,17 +1375,21 @@ bool Assembly::assemble(int argc, const char** argv)
 		cseg->addr++;
 
 	    if(sl.labeled) {
-		Symbol* sym = find(sl.label.str());
-		if(sym)
-		    sl.err(sl.label, "Multiply defined identifier '{}'", sl.label.str());
-		else {
-		    sym = make(sl.label.str());
-		    sym->type = Symbol::Addr;
-		    sym->unresolved = false;
-		    sym->seg = cseg;
-		    sym->value = cseg->addr;
+		if(sl.label.str().c_str()[0] == '.') {
+		    uint16_t num = std::atoi(sl.label.str().c_str()+1);
+		    locals.emplace(num, Local{ num, cseg->addr, cseg });
+		} else {
+		    Symbol* sym = find(sl.label.str());
+		    if(sym)
+			sl.err(sl.label, "Multiply defined identifier '{}'", sl.label.str());
+		    else {
+			sym = make(sl.label.str());
+			sym->type = Symbol::Addr;
+			sym->unresolved = false;
+			sym->seg = cseg;
+			sym->value = cseg->addr;
+		    }
 		}
-
 	    }
 
 	    if(i->ilen) {
@@ -1391,6 +1422,7 @@ bool Assembly::assemble(int argc, const char** argv)
     cseg = nullptr;
     for(auto& sl: source.lines) {
 	if(Instruction* i = sl.insn) {
+	    cseg = i->seg;
 	    if(!i->pass2(*this)) {
 		if(i->ilen != i->bytes.size())
 		    fatal = sl.err(sl.entire, "Fatal: Instruction length desync ({} vs {})", i->ilen, i->bytes.size());
