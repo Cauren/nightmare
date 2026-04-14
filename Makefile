@@ -1,8 +1,18 @@
 CCOPT := -g3 -O0 -std=c++20 -fdiagnostics-color=always
 
-nightmare:			cpu.o
-				g++ ${CCOPT} -o nightmare cpu.o
+nightmare:	cpu.o
+		g++ ${CCOPT} -o $@ $^
 
-cpu.o:				cpu.cc cpu.hh
-				g++ ${CCOPT} -c cpu.cc
+%.o:		%.cc
+		g++ ${CCOPT} -c $<
+
+cpu.o:		cpu.hh
+
+%.x:		%.s
+		./nas/nas -o $@ $<
+
+nas/nas:
+		$(MAKE) -C nas nas
+
+.PHONY:		nas/nas
 
