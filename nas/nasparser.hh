@@ -148,7 +148,7 @@ namespace nas {
 				};
 
 	void			debug(void);
-	void			print(bool);
+	void			print(std::ostream&, bool);
     };
 
     struct Source {

@@ -1,10 +1,13 @@
 
 #include <format>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <list>
 #include <map>
 #include <utility>
+#include <cstring>
+#include <unistd.h>
 
 #include "nasparser.hh"
 
@@ -99,12 +102,17 @@ struct EA {
 
 struct Instruction;
 struct Assembly {
+    std::ostream&		object;
+    std::ostream&		listing;
+
     nas::Source			source;
 
     std::vector<Segment*>	segs;
     std::map<std::string,Symbol>syms;
 
     Segment*			cseg = nullptr;
+
+				Assembly(std::ostream& o, std::ostream& p=std::cerr): object(o), listing(p) { };
 
     bool			assemble(int, const char**);
 
@@ -233,7 +241,7 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl, bool unsized)
     if(unsized)
 	eam = 0;
 
-    // std::cout << "EA: " << n.debug() << ", size " << osz << std::endl;
+    // std::cerr << "EA: " << n.debug() << ", size " << osz << std::endl;
 
     Value v { 0 };
     uint32_t segnum = 0;
@@ -1267,31 +1275,26 @@ struct i_RLIST: public i_one_ea {
 };
 
 
-/*
-|-------|-------|-------|-------
-** ERROR:       filename.ns:line:      
-/- [SEGMENT]
-   000000000000 000 000 000 000 
-   000000000010 000000 000000
-*/
+static bool		printout = false;
 
-void SourceLine::print(bool reset = false)
+void SourceLine::print(std::ostream& listing, bool reset = false)
 {
     static Segment* lseg = nullptr;
     if(reset)
 	lseg = nullptr;
 
-    if(errs.size())
-	debug();
+    if(!errs.size() && !printout)
+	return;
+
     for(const auto& e: errs) {
-	std::cerr << std::format("** ERROR:\t  {}:{}: {}", file->name, line, e.msg) << std::endl;
-	std::cerr << "**\t\t\t\t" << std::string(e.from, ' ') << "⬐" << std::string(e.to-e.from, '-') << std::endl;
+	listing << std::format("** ERROR:\t  {}:{}: {}", file->name, line, e.msg) << std::endl;
+	listing << "**\t\t\t\t" << std::string(e.from, ' ') << "⬐" << std::string(e.to-e.from, '-') << std::endl;
     }
 
     if(insn && insn->bytes.size()>0) {
 	if(lseg != insn->seg) {
 	    lseg = insn->seg;
-	    std::cerr << "⮮[" << lseg->segname << "]" << std::endl;
+	    listing << "⮮[" << lseg->segname << "]" << std::endl;
 	}
 
 	auto b = insn->bytes.begin();
@@ -1311,11 +1314,11 @@ void SourceLine::print(bool reset = false)
 	    return rv;
 	};
 
-	std::cerr << std::format("   {:012o} {:<16s}{}", insn->addr, more(), text);
+	listing << std::format("   {:012o} {:<16s}{}", insn->addr, more(), text);
 	while(b != insn->bytes.end())
-	    std::cerr << std::format("                {:<16s}", more()) << std::endl;
+	    listing << std::format("                {:<16s}", more()) << std::endl;
     } else {
-	std::cerr << "\t\t\t\t" << text;
+	listing << "\t\t\t\t" << text;
     }
 }
 
@@ -1375,7 +1378,7 @@ bool Assembly::assemble(int argc, const char** argv)
 	    }
 	    if(sl.errs.size() > 0) {
 		// pass 1 errors are fatal
-		sl.print();
+		sl.print(listing);
 		return 1;
 	    }
 	}
@@ -1394,7 +1397,7 @@ bool Assembly::assemble(int argc, const char** argv)
 		    fatal = sl.err(sl.entire, "Fatal: Instruction length desync ({} vs {})", i->ilen, i->bytes.size());
 	    }
 	}
-	sl.print();
+	sl.print(listing);
 	if(fatal)
 	    break;
     }
@@ -1439,21 +1442,21 @@ bool Assembly::assemble(int argc, const char** argv)
 	}
 
     for(const auto& seg: segs) {
-	std::cout << std::format("SL{:06o}:{:09o}:{}", seg->value, seg->length, seg->segname);
+	object << std::format("SL{:06o}:{:09o}:{}", seg->value, seg->length, seg->segname);
 	for(const auto& r: seg->data) {
 	    int bytes = 0;
 	    uint64_t addr = r.from;
 	    for(const auto& b: r.bytes) {
 		if(!bytes)
-		    std::cout << std::endl << std::format("DD{:9o}", addr);
-		std::cout << std::format(":{:03o}", b);
+		    object << std::endl << std::format("DD{:9o}", addr);
+		object << std::format(":{:03o}", b);
 		if(++bytes > 29) {
 		    addr += bytes;
 		    bytes = 0;
 		}
 	    }
 	}
-	std::cout << std::endl;
+	object << std::endl;
     }
 
     return true;
@@ -1461,8 +1464,34 @@ bool Assembly::assemble(int argc, const char** argv)
 
 int main(int argc, const char** argv)
 {
-    Assembly	as;
+    int opt;
+    bool of = false;
+    std::ostream* ofile = nullptr;
 
-    as.assemble(argc-1, argv+1);
+    while((opt = getopt(argc, (char*const*)(argv), "lo:")) >= 0)
+	switch(opt) {
+	  case 'l':
+	    printout = true;
+	    break;
+	  case 'o':
+	    ofile = new std::ofstream(optarg, std::ios::trunc);
+	    if(!*ofile) {
+		std::cerr << std::format("{}: {}: {}", argv[0], optarg, std::strerror(errno)) << std::endl;
+		return 1;
+	    }
+	    break;
+	  default:
+	    std::cerr << std::format("usage: {} [-l] [-o filename] source...", argv[0]) << std::endl;
+	    return 1;
+	}
+
+    if(optind >= argc) {
+	std::cerr << std::format("{}: no source files to assemble", argv[0]) << std::endl;
+	return 1;
+    }
+
+    Assembly	as(ofile? *ofile: std::cout);
+
+    as.assemble(argc-optind, argv+optind);
 }
 
