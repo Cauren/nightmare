@@ -1,5 +1,6 @@
 *.swp
 *.o
+*.x
 nasgr.cc
 nasgr.hh
 nasgr.output
