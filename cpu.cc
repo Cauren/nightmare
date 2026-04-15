@@ -205,8 +205,8 @@ void CPU::run(void)
 	    PostInc, PreDec, Indirect, PreIndex, PostIndex
 	}	eamode = None;
 
-	if(opcode & (1<<17)) {
-	    // bit 17 set means there are EA fields on the opcode
+	if((opcode>>16)&3) {
+	    // bit 17 or 16 set means there are EA fields on the opcode
 
 	    eamode = Indirect;
 	    if(opcode == "1"_m || opcode == "010'00x'xxx'0"_m) // those have eam field
@@ -264,7 +264,8 @@ void CPU::run(void)
 		    } else if((opcode&077) == 072) {
 			eamode = Absolute;
 			instr.execs(6);
-			eaddr = addr(instr.uword(), instr.ulong());
+			uword_t sn = instr.uword();
+			eaddr = addr(sn, instr.ulong());
 			break;
 		    } else if((opcode&077) != 070) {
 			throw Fault{ eINVAL, pc };
@@ -655,6 +656,7 @@ void CPU::run(void)
 	        throw Fault{ eINVAL, pc };
 	    }
 	} else
+	    throw Fault{ eINVAL, pc };
 
 	if(!jump) {
 	    pc.addr = instr.addr;
