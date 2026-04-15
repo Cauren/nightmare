@@ -76,6 +76,11 @@ bool CPU::reset(void)
 
 void CPU::trap(byte_t num, const AReg& faddr)
 {
+    if(num == 15) {
+	oscall();
+	return;
+    }
+
     try {
 	AReg usp = a[7];
 	auto osmr = smr;
@@ -203,8 +208,13 @@ void CPU::run(void)
 	    Immed, DReg,
 	    Absolute,
 	    PostInc, PreDec, Indirect, PreIndex, PostIndex
-	}	eamode = None;
+	}	eamode;
+	static const char* const    eamode_name[] = {
+	    "None", "Immediate", "DReg",
+	    "Absolute", "PostInc", "PreDec", "Indirect", "PreIndex", "PostIndex"
+	};
 
+	eamode = None;
 	if((opcode>>16)&3) {
 	    // bit 17 or 16 set means there are EA fields on the opcode
 
@@ -325,6 +335,8 @@ void CPU::run(void)
 	    }
 	    mvaddstr(9, 0, "┗━━━┷━━━━━━━━━━━━━┻━━━┷━━━━━━━━━━━━━━━━━━━━┛");
 
+	    mvaddstr(0, 46, "Decoded EA: "); addstr(eamode_name[int(eamode)]); clrtoeol();
+
 	    auto ppc = debug->slines.upper_bound(Object::SourceLine{ pc.addr, pc.seg });
 	    int dln = 1;
 	    while(dln>-2 && ppc!=debug->slines.begin()) {
@@ -350,7 +362,9 @@ void CPU::run(void)
 	    }
 
 	    refresh();
-	    getch();
+	    char c = getch();
+	    if(c == 'b')
+		__asm__("int $3");
 	}
 
 	static auto ea_readjust = [&](uword_t sz) -> void {
@@ -505,7 +519,7 @@ void CPU::run(void)
 	} else if(opcode == "000'100'011'"_m) {			// TRAP
 	    pending |= 1l << ((opcode&017)+8);
 	} else if(opcode == "1xx"_m) {				// OP Dn,EA / OP EA,Dn
-	    bool todr = opcode & (1<<8);
+	    bool todr = (opcode & (1<<8)) == 0;
 	    int op = (opcode>>12) & 037;
 	    int dreg = (opcode>>9) & 7;
 	    int_t sarg;

@@ -1,6 +1,6 @@
 CCOPT := -g3 -O0 -std=c++20 -fdiagnostics-color=always
 
-nightmare:	cpu.o object.o
+nightmare:	cpu.o object.o os.o
 		g++ ${CCOPT} -o $@ $^ -lncursesw
 
 %.o:		%.cc
@@ -8,6 +8,7 @@ nightmare:	cpu.o object.o
 
 cpu.o:		cpu.hh object.hh
 object.o:	object.hh
+os.o:		cpu.hh
 
 %.x:		%.s
 		./nas/nas -g -o $@ $<

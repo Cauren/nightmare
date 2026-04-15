@@ -225,6 +225,7 @@ namespace Nightmare {
 	    bool			reset(void);
 	    void			trap(byte_t num, const AReg& t);
 	    void			run(void);
+	    void			oscall(void);
     };
 
     inline void CPU::Addr::access(uint_t len, bool perm)
