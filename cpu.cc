@@ -339,7 +339,32 @@ void CPU::run(void)
 	    }
 	    mvaddstr(9, 0, "┗━━━┷━━━━━━━━━━━━━┻━━━┷━━━━━━━━━━━━━━━━━━━━┛");
 
-	    mvaddstr(0, 46, "Decoded EA: "); addstr(eamode_name[int(eamode)]); clrtoeol();
+	    mvaddstr(0, 46, "Decoded EA: "); addstr(eamode_name[int(eamode)]);
+	    switch(eamode) {
+	      case Immed:
+		break;
+	      case DReg:
+		wprintw(stdscr, " (d%d)", int(ereg));
+		break;
+	      case None:
+		break;
+	      default:
+		wprintw(stdscr, " (%o:%lo)", int(eaddr.seg->seg), (unsigned long)(eaddr.addr));
+		break;
+	    }
+	    clrtoeol();
+
+	//uword_t	opcode = instr.uword();
+	//uword_t ext = 0;
+	//uword_t	ereg;
+	//uint_t	uinput;
+	//int_t	sinput;
+	//uword_t	ea_bits;
+	//uword_t	easz = 2;
+	//int_t	offset = 0;
+	//int_t	disp = 0;
+	//int_t	index = 0;
+	//Addr	eaddr;
 
 	    auto ppc = debug->slines.upper_bound(Object::SourceLine{ pc.addr, pc.seg });
 	    int dln = 1;
@@ -351,8 +376,21 @@ void CPU::run(void)
 	    }
 	    mvaddstr(11, 0, std::format("PC: {:06o}:{:012o}", pc.seg, pc.addr).c_str());
 	    for(int ln=-3; ln<10; ln++) {
+		if(ln >= 0) {
+		    move(ln+14, 1);
+		    int l = ppc->len;
+		    Addr a = addr(ppc->seg, ppc->addr);
+		    if(l > 8)
+			l = 6;
+		    int i;
+		    for(i=0; i<l; i+=2)
+			addstr(std::format("{:06o} ", (a.seg->mem[ppc->addr+i]<<9) | a.seg->mem[ppc->addr+i+1]).c_str());
+		    if(i < l)
+			addstr("...");
+		}
+		clrtoeol();
 		move(ln+14, 29);
-		if(ln<dln || ppc->seg!=pc.seg) {
+		if(ln<dln || ppc==debug->slines.end() || ppc->seg!=pc.seg) {
 		    addstr(" ┊");
 		} else {
 		    if(ln==0) {
@@ -362,8 +400,8 @@ void CPU::run(void)
 		    addstr(ppc->text.c_str());
 		    ppc++;
 		}
-		clrtoeol();
 	    }
+	    clrtobot();
 
 	    refresh();
 	    char c = getch();
@@ -371,6 +409,9 @@ void CPU::run(void)
 		__asm__("int $3");
 	    if(c == 'c')
 		dodebug = false;
+	    if(c == 'q') {
+		break;
+	    }
 	}
 
 	static auto ea_readjust = [&](uword_t sz) -> void {

@@ -23,6 +23,8 @@ u_pid		ds	2
 		da	notrap_vec
 		da	notrap_vec
 
+		da	trap0_vec
+
 		org	6 * (8+16+16)	; skip over all trap vectors
 
 context		da	0
@@ -41,6 +43,9 @@ perm_vec	trap	#14
 access_vec	trap	#14
 		rte
 fault_vec	trap	#14
+		rte
+
+trap0_vec	trap	#14
 		rte
 
 reset_vec	lea	kernel_stack,a7
@@ -82,6 +87,6 @@ reset_vec	lea	kernel_stack,a7
 		mov	#@06,d0		; -rw-
 		mov	d0,(8,a6).w
 
-		trap	#1
+		trap	#0
 
 		mov	d0,d0
