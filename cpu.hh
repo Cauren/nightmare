@@ -2,6 +2,9 @@
 #include <cstddef>
 #include <concepts>
 
+#ifndef NIGHTMARE_CPU_HH__
+#define NIGHTMARE_CPU_HH__
+
 namespace Nightmare {
 
     // smallest integral types that can hold a 36-bit long
@@ -64,7 +67,7 @@ namespace Nightmare {
 
 	    enum Trap_t {
 		Reset,
-		ELOOP, EFAULT, EINVAL, EPERM, EACCES,
+		eLOOP, eFAULT, eINVAL, ePERM, eACCES,
 	    };
 
 	    struct Segment {
@@ -188,11 +191,11 @@ namespace Nightmare {
 	    Bitreg<SMBits>		smr;
 	    uword_t			ir;
 
-	    uint_t			segmap;
-	    uword_t			segmap_len;
+	    uint_t			segmap = 0;
+	    uword_t			segmap_len = 0;
 
 	    Segment			scache[16];
-	    uint64_t			pending;
+	    uint64_t			pending = 0;
 	    AReg			fault;
 
 	    template<uint_t bits> void utest(int_t v) {
@@ -219,23 +222,21 @@ namespace Nightmare {
 	    void			run(void);
     };
 
-    void CPU::Addr::access(uint_t len, bool perm) {
+    inline void CPU::Addr::access(uint_t len, bool perm)
+    {
 	if(!perm)
-	    throw Fault{ EACCES, *this };
+	    throw Fault{ eACCES, *this };
 	if(!seg || addr+len > seg->len)
-	    throw Fault{ EFAULT, *this };
+	    throw Fault{ eFAULT, *this };
     };
-
 
 };
 
 template<typename BIT>
-Nightmare::CPU::Bitreg<BIT>::Bits operator | (BIT b1, BIT b2)
-{
-    return typename Nightmare::CPU::Bitreg<BIT>::Bits(b1) | b2;
-};
+Nightmare::CPU::Bitreg<BIT>::Bits operator | (BIT b1, BIT b2);
 
 
+#endif // Double inclusion guard
 
 #if 0
 

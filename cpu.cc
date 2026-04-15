@@ -1,7 +1,18 @@
+#define _XOPEN_SOURCE_EXTENDED
+
+#include <ncursesw/curses.h>
+#include <string>
+#include <format>
 #include "cpu.hh"
 
 
 namespace Nightmare {
+
+template<typename BIT>
+Nightmare::CPU::Bitreg<BIT>::Bits operator | (BIT b1, BIT b2)
+{
+    return typename Nightmare::CPU::Bitreg<BIT>::Bits(b1) | b2;
+};
 
 CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
 {
@@ -14,7 +25,7 @@ CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
 	    s = { segno, true, true, true, true, true, mem_alloc_, mem_ };
 	    break;
 	  case 0777776:
-	    s = { segno, true, true, true, true, false, 6*32, mem_+segtable };
+	    s = { segno, true, true, true, true, false, 16*segmap_len, mem_+segmap };
 	    break;
 	  default: {
 	    Addr segdata = addr(0777776, segno*16, super);
@@ -28,7 +39,7 @@ CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
 	}
     }
     if(s.super && !super)
-	throw Fault{ EPERM, Addr(s, a) };
+	throw Fault{ ePERM, Addr(s, a) };
     return Addr(s, a);
 }
 
@@ -37,6 +48,14 @@ bool CPU::reset(void)
     smr = SU | RST;
     ccr = 0;
     ir = 0777;
+
+    for(int i=0; i<8; i++) {
+	d[i].data = 0;
+	a[i].seg = 0;
+	a[i].addr = 0;
+    }
+    segmap = 0;
+    segmap_len = 0;
 
     for(int i=0; i<16; i++)
 	scache[i].valid = false;
@@ -83,7 +102,7 @@ void CPU::trap(byte_t num, const AReg& faddr)
 
     } catch(const Fault&) {
 
-	throw Fault{ ELOOP, faddr };
+	throw Fault{ eLOOP, faddr };
 
     }
 }
@@ -176,10 +195,11 @@ void CPU::run(void)
 	Addr	eaddr;
 	bool	memea = true;
 	enum {
+	    None,
 	    Immed, DReg,
 	    Absolute,
 	    PostInc, PreDec, Indirect, PreIndex, PostIndex
-	}	eamode;
+	}	eamode = None;
 
 	if(opcode & (1<<17)) {
 	    // bit 17 set means there are EA fields on the opcode
@@ -243,7 +263,7 @@ void CPU::run(void)
 			eaddr = addr(instr.uword(), instr.ulong());
 			break;
 		    } else if((opcode&077) != 070) {
-			throw Fault{ EINVAL, pc };
+			throw Fault{ eINVAL, pc };
 		    }
 		    ereg = 8;
 		    // fallthrough
@@ -289,6 +309,16 @@ void CPU::run(void)
 	    }
 
 	}
+
+	mvaddstr(0, 0, "┏━━━┯━━━━━━━━━━━━━┳━━━┯━━━━━━━━━━━━━━━━━━━━┓");
+	for(int i=0; i<8; i++) {
+	    std::string ln = std::format("┃ d{}│{:12o} ┃ a{}│{:>6o}:{:012o} ┃",
+					 i, signed_<36>(d[i].data),
+					 i, unsigned_<18>(a[i].seg), unsigned_<36>(a[i].addr));
+	    mvaddstr(i+1, 0, ln.c_str());
+	}
+	refresh();
+	getch();
 
 	static auto ea_readjust = [&](uword_t sz) -> void {
 	    if(eamode==PreDec) {
@@ -343,7 +373,7 @@ void CPU::run(void)
 		eaddr.ulong(n);
 		break;
 	    } else
-		throw Fault{ EINVAL, pc };
+		throw Fault{ eINVAL, pc };
 	};
 
 	static auto ea_swrite = [&](int_t n) -> void {
@@ -367,7 +397,7 @@ void CPU::run(void)
 		eaddr.slong(n);
 		break;
 	    } else
-		throw Fault{ EINVAL, pc };
+		throw Fault{ eINVAL, pc };
 	};
 
 	static auto ea_test = [&](int_t n) -> void {
@@ -414,7 +444,7 @@ void CPU::run(void)
 	      case 014: jump = (ccr&V) || (ccr&Z); break;	// BLE
 	      case 015: jump = !(ccr&V) && !(ccr&Z); break;	// BGT
 	      default:
-		throw Fault{ EINVAL, pc };
+		throw Fault{ eINVAL, pc };
 	    }
 	    if(jump)
 		pc.addr = dest;
@@ -427,7 +457,7 @@ void CPU::run(void)
 	    jump = true;
 	} else if(opcode == "000'100'010"_m) {			// RTE
 	    if(!(smr&SU))
-		throw Fault{ EPERM, pc };
+		throw Fault{ ePERM, pc };
 	    a[7].addr -= 24;
 	    Addr frame = addr(a[7]);
 	    ssp = a[7];
@@ -486,7 +516,7 @@ void CPU::run(void)
 	      case 036: ea_swrite(sinput<<uarg); break;		// ASL
 	      case 037: ea_uwrite(uinput<<uarg); break;		// LSL
 	      default:
-		throw Fault{ EINVAL, pc };
+		throw Fault{ eINVAL, pc };
 	    }
 	} else if(opcode == "010'00x'xxx'0xx"_m) {	// OP EA
 	    int op = (opcode>>9) & 017;
@@ -502,7 +532,7 @@ void CPU::run(void)
 	      case 007: ea_swrite(-sinput); break;		// NEG
 	      case 010: ea_uwrite(~sinput); break;		// COM
 	      default:
-		throw Fault{ EINVAL, pc };
+		throw Fault{ eINVAL, pc };
 	    }
 	} else if(opcode == "010'010'xxx'000"_m) {		// STS An,EA
 	    ea_readjust(2);
@@ -524,7 +554,7 @@ void CPU::run(void)
 	    a[(opcode>>9)&7].addr = eaddr.ulong();
 	} else if(opcode == "010'010'xxx'110"_m) {		// LEA EA,An
 	    if(!eaddr)
-		throw Fault{ EFAULT, pc };
+		throw Fault{ eFAULT, pc };
 	    a[(opcode>>9)&7].seg = eaddr.seg->seg;
 	    a[(opcode>>9)&7].addr = eaddr.addr;
 	} else if(opcode == "011'000'000'x00"_m) {		// MOVM
@@ -535,7 +565,7 @@ void CPU::run(void)
 		    size += (i>14)? 2: ((i>7)? 6: 4);
 	    ea_readjust(size);
 	    if(regs&(3<<16) && !(smr&SU))
-		throw Fault { EPERM, pc };
+		throw Fault { ePERM, pc };
 	    if(opcode & (1<<8)) {
 		eaddr.reads(size);
 		for(int i=0; i<18; i++) if(regs & (1<<i)) {
@@ -567,7 +597,7 @@ void CPU::run(void)
 	    }
 	} else if(opcode == "011'000'000'001"_m) {		// JSR
 	    if(!eaddr)
-		throw Fault{ EFAULT, pc };
+		throw Fault{ eFAULT, pc };
 	    Addr tos = addr(a[7]);
 	    tos.writes(6);
 	    tos.uword(pc.seg);
@@ -579,18 +609,18 @@ void CPU::run(void)
 	} else if(opcode == "011'000'000'010"_m) {		// JMP
 	    jump = true;
 	    if(!eaddr)
-		throw Fault{ EFAULT, pc };
+		throw Fault{ eFAULT, pc };
 	    pc.seg = eaddr.seg->seg;
 	    pc.addr = eaddr.addr;
 	} else if(opcode == "011'000'000'1xx"_m) {		// Sxxx
 	    if(!(smr&SU))
-		throw Fault { EPERM, pc };
+		throw Fault { ePERM, pc };
 	    ea_read();
 	    switch((opcode>>6) & 3) {
 	      case 0: segmap = unsigned_<36>(uinput); break;	// SSMA
 	      case 1: segmap_len = unsigned_<18>(uinput); break;// SSML
 	      default:
-	        throw Fault{ EINVAL, pc };
+	        throw Fault{ eINVAL, pc };
 	    }
 	} else
 
@@ -614,10 +644,17 @@ void CPU::run(void)
 
 
 int main(int, char**) {
+    setlocale(LC_CTYPE, "");
+    initscr();
+    noecho();
+    cbreak();
+
     Nightmare::CPU	cpu;
 
     cpu.mem_ = new Nightmare::byte_t[cpu.mem_alloc_ = 640*1024]; // 640K ought to be enough for anyone.  :-)
     if(!cpu.reset())
 	cpu.run();
+
+    endwin();
 }
 

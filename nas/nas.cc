@@ -1474,14 +1474,14 @@ bool Assembly::assemble(int argc, const char** argv)
 	}
 
     for(const auto& seg: segs) {
-	object << std::format("SL{:06o}:{:09o}:{}", seg->value, seg->length, seg->segname);
+	object << std::format("SL{:06o} {:09o} {}", seg->value, seg->length, seg->segname);
 	for(const auto& r: seg->data) {
 	    int bytes = 0;
 	    uint64_t addr = r.from;
 	    for(const auto& b: r.bytes) {
 		if(!bytes)
 		    object << std::endl << std::format("DD{:9o}", addr);
-		object << std::format(":{:03o}", b);
+		object << std::format(" {:03o}", b);
 		if(++bytes > 29) {
 		    addr += bytes;
 		    bytes = 0;
@@ -1494,10 +1494,13 @@ bool Assembly::assemble(int argc, const char** argv)
 	if(Instruction* i = sl.insn) {
 	    if(!i->seg || !i->ilen)
 		continue;
-	    object << std::format("GS{:06o}:{:09o}:{:o}:{}:{}:{}",
+	    object << std::format("GS{:06o} {:09o} {:o} {} {} {}",
 		i->seg->value, i->addr, i->ilen,
 		i->src.file->name, i->src.line, i->src.text);
 	}
+    if(debug) for(auto& sym: syms)
+	if(!sym.second.unresolved && sym.second.type==Symbol::Addr && sym.second.seg)
+	    object << std::format("GY{:06o} {:09o} {}", sym.second.seg->value, sym.second.value, sym.second.name) << std::endl;
 
     return true;
 }
