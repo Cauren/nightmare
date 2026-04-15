@@ -369,6 +369,8 @@ void CPU::run(void)
 	    char c = getch();
 	    if(c == 'b')
 		__asm__("int $3");
+	    if(c == 'c')
+		dodebug = false;
 	}
 
 	static auto ea_readjust = [&](uword_t sz) -> void {
