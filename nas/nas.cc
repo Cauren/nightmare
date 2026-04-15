@@ -1042,15 +1042,16 @@ struct i_ea_reg: public i_one_ea {
     {
 	if(needs(2))
 	    return true;
-	if((regdest = (src.operands[1]==Node::Register)) && src.operands[1].val()<8) {
+	if((regdest = (src.operands[1]==Node::Register))) {
 	    reg = src.operands[1].val();
 	    if(!(ilen = a.ealen(src.operands[0])))
 		return true;
-	} else if(src.operands[0]==Node::Register && src.operands[0].val()<8) {
+	} else if(src.operands[0]==Node::Register) {
+	    reg = src.operands[0].val();
 	    if(!(ilen = a.ealen(src.operands[1])))
 		return true;
 	} else
-	    return src.err(src.op, "Source or destination must be a data register");
+	    return src.err(src.op, "Source or destination must be a register");
 
 	return false;
     };
@@ -1087,6 +1088,13 @@ struct i_EAR: public i_ea_reg {
 
     bool pass2(Assembly& a)
     {
+	if((bits>>15) < 4) {
+	    if(reg<8 || reg>15)
+		return src.err(src.op, "{} requires an address register", src.op.str());
+	} else {
+	    if(reg>7)
+		return src.err(src.op, "{} requires a data register", src.op.str());
+	}
 	if(a.ea(src.operands[regdest? 0: 1], ea, src, reg>7))
 	    return true;
 
