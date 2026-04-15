@@ -373,7 +373,7 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl, bool unsized)
     // ([dx,ar]) can reduce to ([d9,ar])
     if(ean < 2) { // no index, no displacement, ar base
 	if(areg<8 && offset==0 && eat==Node::Indirect) {
-	    ea.eabits = eam | 020 | areg;
+	    ea.eabits = eam | 010 | areg;
 	    return false;
 	}
 	if(!overflow_<9>(offset)) {
