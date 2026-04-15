@@ -124,8 +124,8 @@ namespace Nightmare {
 		void			slong(std::integral auto n) noexcept	{ ulong(signed_<36>(n)); };
 		void			areg(const AReg& ar) noexcept		{ uword(ar.seg); ulong(ar.addr); };
 		uint_t			ubyte(void) noexcept			{ return seg->mem[addr++]; };
-		uint_t			uword(void) noexcept			{ return ubyte() | (ubyte() << 9); };
-		uint_t			ulong(void) noexcept			{ return (uword() << 18) | uword(); };
+		uint_t			uword(void) noexcept			{ return (ubyte() << 9) | ubyte(); };
+		uint_t			ulong(void) noexcept			{ return uword() | (uword() << 18); };
 		int_t			sbyte(void) noexcept			{ return sex_<9>(ubyte()); };
 		int_t			sword(void) noexcept			{ return sex_<18>(uword()); };
 		int_t			slong(void) noexcept			{ return sex_<36>(ulong()); };
