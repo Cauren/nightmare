@@ -869,8 +869,15 @@ struct i_DS: public Instruction {
 
     i_DS(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
 
-    bool pass1(Assembly&)
+    bool pass1(Assembly& a)
     {
+	if(needs(1))
+	    return true;
+	Value v = a.eval(src.operands[0]);
+	if(v.type!=Value::Numeric || v.unresolved)
+	    return src.err(src.operands[0], "Operand must be a resolved numeric value");
+	if(a.cseg)
+	    a.cseg->addr += v.value;
 	return false;
     };
 
