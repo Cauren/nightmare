@@ -110,7 +110,7 @@ void CPU::trap(byte_t num, const AReg& faddr)
 	Addr vec = addr(0777777, num*6);
 	vec.reads(6);
 	uword_t vs = vec.uword();
-	pc = AReg{ vs, vec.ulong() };
+	pc = AReg{ vec.ulong(), vs };
 
     } catch(const Fault&) {
 
