@@ -32,12 +32,23 @@ init_fname	db	"init.x",0
 
 kernel_stack	ds	256 * 6
 
+dfault_vec	trap	#14
+		rte
+inval_vec	trap	#14
+		rte
+perm_vec	trap	#14
+		rte
+access_vec	trap	#14
+		rte
+fault_vec	trap	#14
+		rte
+
 reset_vec	lea	kernel_stack,a7
 		mov	#4*1024,d1
 		mov	#0,d0
 		trap	#15		; kmalloc
 		lea	context,a1
-		mov	a0,(a1)
+		sta	a0,(a1)
 		lea	(a0),a6
 		ssma	(2,a1)
 		mov	#num_segs,d0
@@ -65,8 +76,7 @@ reset_vec	lea	kernel_stack,a7
 		mov	#8*1024,d1
 		mov	#0,d0
 		trap	#15
-		sta	a0,(6,a1)
-		mov	(8,a1),d0
+		sta	a0,d0
 		mov	d0,(a6)
 		mov	d1,(4,a6)
 		mov	#@06,d0		; -rw-
