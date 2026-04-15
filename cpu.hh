@@ -57,6 +57,8 @@ namespace Nightmare {
 	return (n&sign)? -(n^sign): n;
     }
 
+    class Object;
+
     class CPU {
 	public:
 	    byte_t*	mem_ = nullptr;
@@ -198,6 +200,8 @@ namespace Nightmare {
 	    uint64_t			pending = 0;
 	    AReg			fault;
 
+	    const Object*		debug = nullptr;
+
 	    template<uint_t bits> void utest(int_t v) {
 		int_t sign = 1l << (bits-1);
 		ccr&Z = v==0;
@@ -217,6 +221,7 @@ namespace Nightmare {
 	    Addr			addr(uword_t sn, uint_t a, bool super=false);
 	    Addr			addr(const AReg& ar)			{ return addr(ar.seg, ar.addr); };
 
+	    bool			apply(const Object&, bool super=false);
 	    bool			reset(void);
 	    void			trap(byte_t num, const AReg& t);
 	    void			run(void);
