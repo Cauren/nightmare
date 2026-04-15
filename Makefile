@@ -6,7 +6,8 @@ nightmare:	cpu.o object.o
 %.o:		%.cc
 		g++ ${CCOPT} -c $<
 
-cpu.o:		cpu.hh
+cpu.o:		cpu.hh object.hh
+object.o:	object.hh
 
 %.x:		%.s
 		./nas/nas -g -o $@ $<

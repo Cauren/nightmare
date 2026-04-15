@@ -3,8 +3,11 @@
 #include <ncursesw/curses.h>
 #include <string>
 #include <format>
+#include <cerrno>
+#include <cstring>
+#include <fstream>
 #include "cpu.hh"
-
+#include "object.hh"
 
 namespace Nightmare {
 
@@ -138,13 +141,13 @@ struct opmask_ {
 static constexpr opmask_ operator ""_m(const char* d, size_t)
 {
     opmask_ om = { 0, 0 };
-    int left=16;
+    int left=18;
     char ch;
     while(left && (ch=*d++)) switch(ch) {
       case '0':
       case '1':
 	om.mask = (om.mask<<1) | 1;
-	om.bits = (om.mask<<1) | (ch&1);
+	om.bits = (om.bits<<1) | (ch&1);
 	--left;
 	break;
       case 'x':
@@ -159,6 +162,7 @@ static constexpr opmask_ operator ""_m(const char* d, size_t)
 }
 
 static constexpr bool operator == (const opmask_& m, uword_t o) { return (o&m.mask)==m.bits; };
+static constexpr bool operator == (uword_t o, const opmask_& m) { return (o&m.mask)==m.bits; };
 
 void CPU::run(void)
 {
@@ -310,15 +314,43 @@ void CPU::run(void)
 
 	}
 
-	mvaddstr(0, 0, "┏━━━┯━━━━━━━━━━━━━┳━━━┯━━━━━━━━━━━━━━━━━━━━┓");
-	for(int i=0; i<8; i++) {
-	    std::string ln = std::format("┃ d{}│{:12o} ┃ a{}│{:>6o}:{:012o} ┃",
-					 i, signed_<36>(d[i].data),
-					 i, unsigned_<18>(a[i].seg), unsigned_<36>(a[i].addr));
-	    mvaddstr(i+1, 0, ln.c_str());
+	if(debug) {
+	    mvaddstr(0, 0, "┏━━━┯━━━━━━━━━━━━━┳━━━┯━━━━━━━━━━━━━━━━━━━━┓");
+	    for(int i=0; i<8; i++) {
+		std::string ln = std::format("┃ d{}│{:12o} ┃ a{}│{:>6o}:{:012o} ┃",
+					     i, signed_<36>(d[i].data),
+					     i, unsigned_<18>(a[i].seg), unsigned_<36>(a[i].addr));
+		mvaddstr(i+1, 0, ln.c_str());
+	    }
+	    mvaddstr(9, 0, "┗━━━┷━━━━━━━━━━━━━┻━━━┷━━━━━━━━━━━━━━━━━━━━┛");
+
+	    auto ppc = debug->slines.upper_bound(Object::SourceLine{ pc.addr, pc.seg });
+	    int dln = 1;
+	    while(dln>-2 && ppc!=debug->slines.begin()) {
+		if(std::prev(ppc)->seg != pc.seg)
+		    break;
+		ppc--;
+		dln--;
+	    }
+	    mvaddstr(11, 0, std::format("PC: {:06o}:{:012o}", pc.seg, pc.addr).c_str());
+	    for(int ln=-3; ln<10; ln++) {
+		move(ln+14, 29);
+		if(ln<dln || ppc->seg!=pc.seg) {
+		    addstr(" ┊");
+		} else {
+		    if(ln==0) {
+			addstr((ppc->addr==pc.addr)? "──→": "~~↴");
+		    } else
+			addstr(" ┋ ");
+		    addstr(ppc->text.c_str());
+		    ppc++;
+		}
+		clrtoeol();
+	    }
+
+	    refresh();
+	    getch();
 	}
-	refresh();
-	getch();
 
 	static auto ea_readjust = [&](uword_t sz) -> void {
 	    if(eamode==PreDec) {
@@ -638,20 +670,51 @@ void CPU::run(void)
     }
 }
 
+
+
+bool CPU::apply(const Object& obj, bool super)
+{
+    for(const auto& s: obj.segs) {
+	uint_t	base = 0;
+	if(super) {
+	    if(s.value != 0777777)
+		continue;
+	    for(const auto& d: s.data)
+		if(d.addr+d.bytes.size() <= mem_alloc_)
+		    memcpy(mem_+d.addr, d.bytes.data(), d.bytes.size()*sizeof(byte_t));
+	}
+    }
+    if(obj.slines.size() || obj.syms.size())
+	debug = &obj;
+    return true;
+}
+
+
+
 } // namespace Nightmare
 
 
 
 
-int main(int, char**) {
+int main(int argc, char** argv) {
     setlocale(LC_CTYPE, "");
     initscr();
     noecho();
     cbreak();
 
     Nightmare::CPU	cpu;
+    Nightmare::Object	bootstrap;
+
+    std::ifstream	bsfile("bootstrap.x");
+    if(bsfile.bad()) {
+	std::cerr << std::format("{}: bootstrap.x: {}", argv[0], std::strerror(errno)) << std::endl;
+	return 1;
+    }
+    bootstrap.load(bsfile);
 
     cpu.mem_ = new Nightmare::byte_t[cpu.mem_alloc_ = 640*1024]; // 640K ought to be enough for anyone.  :-)
+    cpu.apply(bootstrap, true);
+
     if(!cpu.reset())
 	cpu.run();
 
