@@ -1090,15 +1090,15 @@ struct i_EAR: public i_ea_reg {
     {
 	if((bits>>15) < 4) {
 	    if(reg<8 || reg>15)
-		return src.err(src.op, "{} requires an address register", src.op.str());
+		return src.err(src.operands[regdest? 1: 0], "{} requires an address register", src.op.str());
 	} else {
 	    if(reg>7)
-		return src.err(src.op, "{} requires a data register", src.op.str());
+		return src.err(src.operands[regdest? 1: 0], "{} requires a data register", src.op.str());
 	}
 	if(a.ea(src.operands[regdest? 0: 1], ea, src, reg>7))
 	    return true;
 
-	if(!regdest)
+	if(reg<8 && !regdest)
 	    ea.eabits |= 0400;
 	ea.eabits |= (reg&7) << 9;
 	word(bits | ea.eabits);
