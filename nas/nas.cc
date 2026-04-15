@@ -1042,15 +1042,15 @@ struct i_ea_reg: public i_one_ea {
     {
 	if(needs(2))
 	    return true;
-	if((regdest = (src.operands[1] == Node::Register))) {
+	if((regdest = (src.operands[1]==Node::Register)) && src.operands[1].val()<8) {
 	    reg = src.operands[1].val();
 	    if(!(ilen = a.ealen(src.operands[0])))
 		return true;
-	} else if(src.operands[0] == Node::Register) {
+	} else if(src.operands[0]==Node::Register && src.operands[0].val()<8) {
 	    if(!(ilen = a.ealen(src.operands[1])))
 		return true;
 	} else
-	    return src.err(src.op, "Impossible?  Src or dst must be a register");
+	    return src.err(src.op, "Impossible?  Src or dst must be a data register");
 
 	return false;
     };
