@@ -103,7 +103,7 @@ namespace Nightmare {
 					Addr(Segment& s, uint_t a): seg(&s), addr(a)			{ };
 
 					operator bool (void) const		{ return seg; };
-					operator AReg (void) const		{ return { addr, seg? seg->seg: 0777777 }; };
+					operator AReg (void) const		{ return AReg{ addr, seg? seg->seg: 0777777 }; };
 
 		inline void		reads(uint_t len)			{ access(len, seg->read); };
 		inline void		writes(uint_t len)			{ access(len, seg->write); };

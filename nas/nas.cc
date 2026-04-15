@@ -1042,7 +1042,13 @@ struct i_ea_reg: public i_one_ea {
     {
 	if(needs(2))
 	    return true;
-	if((regdest = (src.operands[1]==Node::Register))) {
+	regdest = false;
+	if(src.operands[0]==Node::Register && src.operands[0].val()>7) {
+	    reg = src.operands[0].val();
+	    if(!(ilen = a.ealen(src.operands[1])))
+		return true;
+	} else if(src.operands[1]==Node::Register) {
+	    regdest = true;
 	    reg = src.operands[1].val();
 	    if(!(ilen = a.ealen(src.operands[0])))
 		return true;

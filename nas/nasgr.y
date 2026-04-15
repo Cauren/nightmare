@@ -182,6 +182,8 @@ operands		: mem_ea ',' DREG				{ $$ = Ml(List, $1, $3); }
 			| DREG ',' mem_ea SIZE				{ $$ = Ml(List, $1, $3.add($4)); }
 			| mem_ea ',' AREG				{ $$ = Ml(List, $1, $3); }
 			| AREG ',' mem_ea				{ $$ = Ml(List, $1, $3); } 
+			| DREG ',' AREG					{ $$ = Ml(List, $1, $3); } 
+			| AREG ',' DREG					{ $$ = Ml(List, $1, $3); } 
 			| src_ea					{ $$ = Ml(List, $1); }
 			| src_ea SIZE					{ $$ = Ml(List, $1.add($2)); }
 			| abslist

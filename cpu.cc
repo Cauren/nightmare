@@ -596,15 +596,23 @@ void CPU::run(void)
 	    eaddr.reads(2);
 	    a[(opcode>>9)&7].seg = eaddr.uword();
 	} else if(opcode == "010'010'xxx'001"_m) {		// STA An,EA
-	    ea_readjust(6);
-	    eaddr.writes(6);
-	    eaddr.uword(a[(opcode>>9)&7].seg);
-	    eaddr.ulong(a[(opcode>>9)&7].addr);
+	    if(eamode == DReg) {
+		d[ereg].data = unsigned_<36>(a[(opcode>>9)&7].addr);
+	    } else {
+		ea_readjust(6);
+		eaddr.writes(6);
+		eaddr.uword(a[(opcode>>9)&7].seg);
+		eaddr.ulong(a[(opcode>>9)&7].addr);
+	    }
 	} else if(opcode == "010'010'xxx'101"_m) {		// LDA EA,An
-	    ea_readjust(6);
-	    eaddr.reads(6);
-	    a[(opcode>>9)&7].seg = eaddr.uword();
-	    a[(opcode>>9)&7].addr = eaddr.ulong();
+	    if(eamode == DReg) {
+		a[(opcode>>9)&7].addr = unsigned_<36>(d[ereg].data);
+	    } else {
+		ea_readjust(6);
+		eaddr.reads(6);
+		a[(opcode>>9)&7].seg = eaddr.uword();
+		a[(opcode>>9)&7].addr = eaddr.ulong();
+	    }
 	} else if(opcode == "010'010'xxx'110"_m) {		// LEA EA,An
 	    if(!eaddr)
 		throw Fault{ eFAULT, pc };
