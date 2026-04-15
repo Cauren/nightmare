@@ -201,6 +201,7 @@ namespace Nightmare {
 	    AReg			fault;
 
 	    const Object*		debug = nullptr;
+	    bool			dodebug = false;
 
 	    template<uint_t bits> void utest(int_t v) {
 		int_t sign = 1l << (bits-1);
@@ -301,8 +302,8 @@ eam
 | 0   1   1   0   0   0   0   0   0 | d | 0   0 |  ea.type  |   ea.reg  |	MOVM regs...,ea  ea,regs...
 | 0   1   1   0   0   0   0   0   0   0   0   1 |  ea.type  |   ea.reg  |	JSR ea
 | 0   1   1   0   0   0   0   0   0   0   1   0 |  ea.type  |   ea.reg  |	JMP ea
-| 0   1   1   0   0   0   0   0   0   1   0   0 |  ea.type  |   ea.reg  |	SSMA ea
-| 0   1   1   0   0   0   0   0   0   1   0   1 |  ea.type  |   ea.reg  |	SSML ea
+| 0   1   1   0   0   0   0   0   1   0   0   0 |  ea.type  |   ea.reg  |	SSMA ea
+| 0   1   1   0   0   0   0   0   1   0   0   1 |  ea.type  |   ea.reg  |	SSML ea
 
 | 0   0   0   0   0 |      xx       |                 r9                |	bxx r9
 | 0   0   0   0   1 |      xx       |                 r9		|	bxx r27

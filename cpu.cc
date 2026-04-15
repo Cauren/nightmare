@@ -76,8 +76,12 @@ bool CPU::reset(void)
 
 void CPU::trap(byte_t num, const AReg& faddr)
 {
-    if(num == 15) {
+    if(num == 23) { // TRAP #15
 	oscall();
+	return;
+    }
+    if(num == 22) { // TRAP #14
+	dodebug = debug!=nullptr;
 	return;
     }
 
@@ -325,7 +329,7 @@ void CPU::run(void)
 
 	}
 
-	if(debug) {
+	if(dodebug && debug) {
 	    mvaddstr(0, 0, "┏━━━┯━━━━━━━━━━━━━┳━━━┯━━━━━━━━━━━━━━━━━━━━┓");
 	    for(int i=0; i<8; i++) {
 		std::string ln = std::format("┃ d{}│{:12o} ┃ a{}│{:>6o}:{:012o} ┃",
@@ -659,7 +663,7 @@ void CPU::run(void)
 		throw Fault{ eFAULT, pc };
 	    pc.seg = eaddr.seg->seg;
 	    pc.addr = eaddr.addr;
-	} else if(opcode == "011'000'000'1xx"_m) {		// Sxxx
+	} else if(opcode == "011'000'001'0xx"_m) {		// Sxxx
 	    if(!(smr&SU))
 		throw Fault { ePERM, pc };
 	    ea_read();

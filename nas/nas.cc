@@ -1110,8 +1110,8 @@ struct i_UNARY: public i_one_ea {
 	{ "NEG",	0207000 },
 	{ "COM",	0210000 },
 
-	{ "SSMA",	0300400 },
-	{ "SSML",	0300500 },
+	{ "SSMA",	0301000 },
+	{ "SSML",	0301100 },
     };
 
     i_UNARY(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
