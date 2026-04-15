@@ -1050,7 +1050,7 @@ struct i_ea_reg: public i_one_ea {
 	    if(!(ilen = a.ealen(src.operands[1])))
 		return true;
 	} else
-	    return src.err(src.op, "Impossible?  Src or dst must be a data register");
+	    return src.err(src.op, "Source or destination must be a data register");
 
 	return false;
     };
