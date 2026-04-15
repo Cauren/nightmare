@@ -83,3 +83,5 @@ reset_vec	lea	kernel_stack,a7
 		mov	d0,(8,a6).w
 
 		trap	#1
+
+		mov	d0,d0

@@ -625,6 +625,7 @@ struct Instruction {
     Segment*			seg = nullptr;
     uint64_t			addr = 0;
     size_t			ilen = 0;
+    size_t			iskip = 0;
     bool			words = true;
     std::vector<uint16_t>	bytes;
 
@@ -877,7 +878,7 @@ struct i_DS: public Instruction {
 	if(v.type!=Value::Numeric || v.unresolved)
 	    return src.err(src.operands[0], "Operand must be a resolved numeric value");
 	if(a.cseg)
-	    a.cseg->addr += v.value;
+	    iskip += v.value;
 	return false;
     };
 
@@ -1427,6 +1428,10 @@ bool Assembly::assemble(int argc, const char** argv)
 
 		    cseg->addr += i->ilen;
 		}
+	    }
+	    if(i->iskip) {
+		cseg->addr += i->iskip;
+		i->iskip = 0;
 	    }
 	    if(sl.errs.size() > 0) {
 		// pass 1 errors are fatal
