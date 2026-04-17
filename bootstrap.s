@@ -6,7 +6,7 @@ _uarea		seg	4
 
 num_segs	equ	32
 
-segmap		ds	16*num_segs
+		org	16*num_segs
 u_pid		ds	2
 
 		seg	_root
@@ -63,8 +63,6 @@ reset_vec	lea	kernel_stack,a7
 		dec	d0
 		bne	.1b
 
-		trap	#14		; breakpoint
-
 		* initialize segmap for init process
 		* at this point a6 points to the segmap
 
@@ -87,6 +85,23 @@ reset_vec	lea	kernel_stack,a7
 		mov	#@06,d0		; -rw-
 		mov	d0,(8,a6).w
 
-		trap	#0
+		trap	#14
 
-		mov	d0,d0
+		* load init.x userspace
+		lea	init_fname,a0
+		mov	#2,d0
+		trap	#15
+
+		* build stack frame
+		clr	(a7)+.w		; CCR
+		clr	(a7)+.w		; IR
+		clr	(a7)+.w		; SMR
+		clr	(a7)+.w		; (fault / none)
+		clr	(a7)+
+		clr	(a7)+.w		; SSP 0:0
+		clr	(a7)+
+		mov	#3,d0		; PC 3:0
+		mov	d0,(a7)+.w
+		clr	(a7)+
+		rte
+

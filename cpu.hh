@@ -61,8 +61,8 @@ namespace Nightmare {
 
     class CPU {
 	public:
-	    byte_t*	mem_ = nullptr;
-	    size_t	mem_alloc_ = 0;
+	    static byte_t*	mem_;
+	    static size_t	mem_alloc_;
 
 	    struct Trap;
 	    struct AReg;
@@ -115,6 +115,8 @@ namespace Nightmare {
 		Addr&			operator = (const Addr&) = default;
 		Addr&			operator += (int_t len)			{ addr += len; return *this; };
 		Addr&			operator -= (int_t len)			{ addr -= len; return *this; };
+
+		Addr			operator + (int_t offset)		{ return Addr(*seg, addr+offset); };
 
 		void			ubyte(std::integral auto n) noexcept	{ seg->mem[addr++] = unsigned_<9>(n); };
 		void			uword(std::integral auto n) noexcept	{ ubyte(n>>9); ubyte(n); };
@@ -200,7 +202,7 @@ namespace Nightmare {
 	    uint64_t			pending = 0;
 	    AReg			fault;
 
-	    const Object*		debug = nullptr;
+	    Object*			debug = nullptr;
 	    bool			dodebug = true;
 
 	    template<uint_t bits> void utest(int_t v) {
@@ -219,10 +221,11 @@ namespace Nightmare {
 		ccr&C = (v & ~(1l<<bits));
 	    };
 
+	    Segment*			seg(uword_t sn);
 	    Addr			addr(uword_t sn, uint_t a, bool super=false);
 	    Addr			addr(const AReg& ar)			{ return addr(ar.seg, ar.addr); };
 
-	    bool			apply(const Object&, bool super=false);
+	    bool			apply(Object&, bool super=false);
 	    bool			reset(void);
 	    void			trap(byte_t num, const AReg& t);
 	    void			run(void);

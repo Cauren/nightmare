@@ -11,39 +11,58 @@
 
 namespace Nightmare {
 
+byte_t*	CPU::mem_ = nullptr;
+size_t	CPU::mem_alloc_ = 0;
+
 template<typename BIT>
 Nightmare::CPU::Bitreg<BIT>::Bits operator | (BIT b1, BIT b2)
 {
     return typename Nightmare::CPU::Bitreg<BIT>::Bits(b1) | b2;
 };
 
-CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
+CPU::Segment* CPU::seg(uword_t segno)
 {
-    Segment& s = scache[segno&15];
-    super |= smr & SU;
+    Segment* s = scache+(segno&15);
 
-    if(!s.valid || s.seg!=segno) {
+    if(!s->valid || s->seg!=segno) {
 	switch(segno) {
 	  case 0777777:
-	    s = { segno, true, true, true, true, true, mem_alloc_, mem_ };
+	    *s = { segno, true, true, true, true, true, mem_alloc_, mem_ };
 	    break;
 	  case 0777776:
-	    s = { segno, true, true, true, true, false, 16*segmap_len, mem_+segmap };
+	    if(!segmap)
+		return nullptr;
+	    *s = { segno, true, true, true, true, false, 16*segmap_len, mem_+segmap };
 	    break;
-	  default: {
-	    Addr segdata = addr(0777776, segno*16, super);
-	    segdata.reads(16);
-	    uint_t sa = segdata.ulong();
-	    uint_t sl = segdata.ulong();
-	    uword_t sf = segdata.uword();
-	    s = { segno, true, bool(sf&010), bool(sf&004), bool(sf&002), bool(sf&001), sl, mem_+sa };
-	    break;
-	  }
+	  default:
+	    if(!segmap || segno>segmap_len)
+		return nullptr;
+	    else {
+		Addr segdata(*seg(0777777), segmap+16*segno);
+		uint_t sa = segdata.ulong();
+		uint_t sl = segdata.ulong();
+		uword_t sf = segdata.uword();
+		if(!sl)
+		    return nullptr;
+		*s = { segno, true, bool(sf&010), bool(sf&004), bool(sf&002), bool(sf&001), sl, mem_+sa };
+		break;
+	    }
 	}
     }
-    if(s.super && !super)
-	throw Fault{ ePERM, Addr(s, a) };
-    return Addr(s, a);
+
+    return s;
+}
+
+CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
+{
+    Segment* s = seg(segno);
+
+    super |= smr&SU;
+    if(!s || a >= s->len)
+	throw Fault{ eFAULT, Addr(*s, a) };
+    if(s->super && !super)
+	throw Fault{ ePERM, Addr(*s, a) };
+    return Addr(*s, a);
 }
 
 bool CPU::reset(void)
@@ -400,6 +419,7 @@ void CPU::run(void)
 		    addstr(ppc->text.c_str());
 		    ppc++;
 		}
+		clrtoeol();
 	    }
 	    clrtobot();
 
@@ -732,7 +752,7 @@ void CPU::run(void)
 	};
 
     } catch(const Fault& f) {
-	if(f.trap == ELOOP) // Double fault.  Give up.
+	if(f.trap == eLOOP) // Double fault.  Give up.
 	    halted = true;
 	else {
 	    pending |= 1l << int(f.trap);
@@ -743,7 +763,7 @@ void CPU::run(void)
 
 
 
-bool CPU::apply(const Object& obj, bool super)
+bool CPU::apply(Object& obj, bool super)
 {
     for(const auto& s: obj.segs) {
 	uint_t	base = 0;

@@ -10,6 +10,7 @@ bool Object::load(std::istream& in)
     std::string line;
     Segment*	cs;
 
+    segs.clear();
     while(std::getline(in, line).good()) {
 	char		cmd[2];
 	uword_t		seg;
