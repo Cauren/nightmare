@@ -137,8 +137,8 @@ void CPU::oscall(void)
 			for(const auto& d: s.data)
 			    memcpy(mem_+mem+d.addr, d.bytes.data(), d.bytes.size()*sizeof(byte_t));
 		    }
-		}
-		throw ENOEXEC;
+		} else
+		    throw ENOEXEC;
 	    }
 	}
     } catch(int e) {

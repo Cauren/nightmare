@@ -398,14 +398,17 @@ void CPU::run(void)
 		if(ln >= 0) {
 		    move(ln+14, 1);
 		    int l = ppc->len;
-		    Addr a = addr(ppc->seg, ppc->addr);
-		    if(l > 8)
-			l = 6;
-		    int i;
-		    for(i=0; i<l; i+=2)
-			addstr(std::format("{:06o} ", (a.seg->mem[ppc->addr+i]<<9) | a.seg->mem[ppc->addr+i+1]).c_str());
-		    if(i < l)
-			addstr("...");
+		    Segment* s = seg(ppc->seg);
+		    if(s) {
+			const byte_t* mem = s->mem + ppc->addr;
+			if(l > 8)
+			    l = 6;
+			int i;
+			for(i=0; i<l; i+=2)
+			    addstr(std::format("{:06o} ", (mem[+i]<<9) | mem[i+1]).c_str());
+			if(i < l)
+			    addstr("...");
+		    }
 		}
 		clrtoeol();
 		move(ln+14, 29);
