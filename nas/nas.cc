@@ -1076,14 +1076,23 @@ struct i_EAR: public i_ea_reg {
     inline static Opcode::List<i_EAR> opcodes = {
 	{ "MOV",	0400000 },
 	{ "SEX",	0410000 },
-	{ "ADD",	0420000 },
-	{ "SUB",	0430000 },
-	{ "ADC",	0440000 },
-	{ "SBC",	0450000 },
-	{ "AND",	0460000 },
-	{ "OR",		0470000 },
-	{ "XOR",	0500000 },
-	{ "CMP",	0510000 },
+	{ "ADD",	0500000 },
+	{ "SUB",	0510000 },
+	{ "ADC",	0520000 },
+	{ "SBC",	0530000 },
+	{ "AND",	0540000 },
+	{ "OR",		0550000 },
+	{ "XOR",	0560000 },
+	{ "CMP",	0570000 },
+	{ "MULU",	0600000 },
+	{ "MULS",	0610000 },
+	{ "DIVU",	0620000 },
+	{ "DIVS",	0630000 },
+	{ "ROR",	0640000 },
+	{ "RORC",	0650000 },
+	{ "ROL",	0660000 },
+	{ "ROLC",	0670000 },
+	{ "BCOM",	0700000 },
 	{ "BCLR",	0710000 },
 	{ "BSET",	0720000 },
 	{ "BTST",	0730000 },
@@ -1159,6 +1168,7 @@ struct i_ADDR: public i_one_ea {
     inline static Opcode::List<i_ADDR> opcodes = {
 	{ "JSR",	0300100 },
 	{ "JMP",	0300200 },
+	{ "PEA",	0301200 },
     };
 
     i_ADDR(SourceLine& sl, uint32_t b): i_one_ea(sl, b) { };
@@ -1270,11 +1280,36 @@ struct i_IMM9: public Instruction {
 	    Value v = a.eval(src.operands[0][0]);
 	    if(v.type!=Value::Numeric || v.unresolved)
 		return src.err(src.operands[0][0], "Value must be a resolved constant");
-	    if(v.value < 0 || v.value > 15)
+	    if(bits==043000 && (v.value < 0 || v.value > 15))
 		return src.err(src.operands[0][0], "Value ({}) out of range (0..15)", v.value);
 	    trap = v.value;
 	}
 	word(bits | trap);
+	return false;
+    }
+};
+
+struct i_OPLESS: public Instruction {
+    i_OPLESS(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    inline static Opcode::List<i_OPLESS> opcodes = {
+	{ "NOP",	0133000 },
+	{ "STOP",	0133001 },
+	{ "BKPT",	0133002 },
+	{ "CLC",	0133003 },
+    };
+
+    bool pass1(Assembly& a)
+    {
+	if(needs(0))
+	    return true;
+	ilen = 2;
+	return false;
+    }
+
+    bool pass2(Assembly& a)
+    {
+	word(bits);
 	return false;
     }
 };
