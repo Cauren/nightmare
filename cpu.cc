@@ -304,9 +304,11 @@ void CPU::run(void)
 	    move(10, 0);
 	    clrtoeol();
 	    mvaddstr(11, 0, std::format("PC: {:06o}:{:012o}", pc.seg, pc.addr).c_str());
+	    move(12, 0); clrtoeol();
+	    move(13, 0); clrtoeol();
 	    for(int ln=-3; ln<10; ln++) {
 		if(ln >= 0) {
-		    move(ln+14, 1);
+		    move(ln+14, 0);
 		    int l = ppc->len;
 		    Segment* s = seg(ppc->seg);
 		    if(s) {
@@ -864,6 +866,16 @@ void CPU::run(void)
 	    pc.addr = instr.addr;
 	};
 
+	if(halted) {
+	    if(dodebug)
+	    {
+		display_cpu();
+		display_insn_decode();
+		display_console(26);
+	    } else
+		display_console(0);
+	}
+
     } catch(const Fault& f) {
 	if(f.trap == eLOOP) // Double fault.  Give up.
 	    halted = true;
@@ -873,13 +885,6 @@ void CPU::run(void)
 	}
     }
 
-    if(dodebug)
-    {
-	display_cpu();
-	display_insn_decode();
-	display_console(26);
-    } else
-	display_console(0);
 }
 
 
