@@ -93,8 +93,6 @@ reset_vec	lea	kernel_stack,a7
 		mov	#3,d0
 		trap	#15
 
-		trap	#14
-
 		* load init.x userspace
 		lea	init_fname,a0
 		mov	#2,d0
