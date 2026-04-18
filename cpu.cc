@@ -200,7 +200,30 @@ void CPU::run(void)
     bool halted = false;
     while(!halted) try {
 
+	auto display_console = [&](int ln=0) -> void {
+	    int	nl = LINES-ln;
+	    if(nl > 16)
+		nl = 16;
+	    mvaddstr(25, 0, "╔════════════════════════════════════════════════════════════════╗"); clrtoeol();
+	    for(int i=0; i<nl; i++) {
+		mvaddstr(i+ln, 0, "║");
+		clrtoeol();
+		for(int x=0; x<64; x++)
+		    if(screen_[i][x])
+			addch(screen_[i][x]);
+		mvaddstr(i+ln, 65, "║");
+	    }
+	    mvaddstr(ln+nl, 0, "╚════════════════════════════════════════════════════════════════╝");
+	    clrtobot();
+
+	    move(ln+scr_y_, 1+scr_x_);
+	    refresh();
+	};
+
 	if(pending) {
+	    if(!dodebug)
+		display_console(0);
+
 	    int tr;
 	    for(tr=0; tr<24; tr++)
 		if(pending & (1l << tr))
@@ -238,6 +261,75 @@ void CPU::run(void)
 	static const char* const    eamode_name[] = {
 	    "None", "Immediate", "DReg",
 	    "Absolute", "PostInc", "PreDec", "Indirect", "PreIndex", "PostIndex"
+	};
+
+	auto display_insn_decode = [&](void) -> void {
+	    mvaddstr(0, 46, "Decoded EA: "); addstr(eamode_name[int(eamode)]);
+	    switch(eamode) {
+	      case Immed:
+		break;
+	      case DReg:
+		wprintw(stdscr, " (d%d)", int(ereg));
+		break;
+	      case None:
+		break;
+	      default:
+		wprintw(stdscr, " (%o:%lo)", int(eaddr.seg->seg), (unsigned long)(eaddr.addr));
+		break;
+	    }
+	    clrtoeol();
+	};
+
+	auto display_cpu = [&](void) -> void {
+	    mvaddstr(0, 0, "┏━━━┯━━━━━━━━━━━━━┳━━━┯━━━━━━━━━━━━━━━━━━━━┓");
+	    for(int i=0; i<8; i++) {
+		std::string ln = std::format("┃ d{}│{:12o} ┃ a{}│{:>6o}:{:012o} ┃",
+					     i, signed_<36>(d[i].data),
+					     i, unsigned_<18>(a[i].seg), unsigned_<36>(a[i].addr));
+		mvaddstr(i+1, 0, ln.c_str());
+	    }
+	    mvaddstr(9, 0, "┗━━━┷━━━━━━━━━━━━━┻━━━┷━━━━━━━━━━━━━━━━━━━━┛");
+
+	    auto ppc = debug->slines.upper_bound(Object::SourceLine{ pc.addr, pc.seg });
+	    int dln = 1;
+	    while(dln>-2 && ppc!=debug->slines.begin()) {
+		if(std::prev(ppc)->seg != pc.seg)
+		    break;
+		ppc--;
+		dln--;
+	    }
+	    mvaddstr(11, 0, std::format("PC: {:06o}:{:012o}", pc.seg, pc.addr).c_str());
+	    for(int ln=-3; ln<10; ln++) {
+		if(ln >= 0) {
+		    move(ln+14, 1);
+		    int l = ppc->len;
+		    Segment* s = seg(ppc->seg);
+		    if(s) {
+			const byte_t* mem = s->mem + ppc->addr;
+			if(l > 8)
+			    l = 6;
+			int i;
+			for(i=0; i<l; i+=2)
+			    addstr(std::format("{:06o} ", (mem[+i]<<9) | mem[i+1]).c_str());
+			if(i < l)
+			    addstr("...");
+		    }
+		}
+		clrtoeol();
+		move(ln+14, 29);
+		if(ln<dln || ppc==debug->slines.end() || ppc->seg!=pc.seg) {
+		    addstr(" ┊");
+		} else {
+		    if(ln==0) {
+			addstr((ppc->addr==pc.addr)? "──→": "~~↴");
+		    } else
+			addstr(" ┋ ");
+		    addstr(ppc->text.c_str());
+		    ppc++;
+		}
+		clrtoeol();
+	    }
+
 	};
 
 	eamode = None;
@@ -352,98 +444,9 @@ void CPU::run(void)
 	}
 
 	if(dodebug && debug) {
-	    mvaddstr(0, 0, "┏━━━┯━━━━━━━━━━━━━┳━━━┯━━━━━━━━━━━━━━━━━━━━┓");
-	    for(int i=0; i<8; i++) {
-		std::string ln = std::format("┃ d{}│{:12o} ┃ a{}│{:>6o}:{:012o} ┃",
-					     i, signed_<36>(d[i].data),
-					     i, unsigned_<18>(a[i].seg), unsigned_<36>(a[i].addr));
-		mvaddstr(i+1, 0, ln.c_str());
-	    }
-	    mvaddstr(9, 0, "┗━━━┷━━━━━━━━━━━━━┻━━━┷━━━━━━━━━━━━━━━━━━━━┛");
-
-	    mvaddstr(0, 46, "Decoded EA: "); addstr(eamode_name[int(eamode)]);
-	    switch(eamode) {
-	      case Immed:
-		break;
-	      case DReg:
-		wprintw(stdscr, " (d%d)", int(ereg));
-		break;
-	      case None:
-		break;
-	      default:
-		wprintw(stdscr, " (%o:%lo)", int(eaddr.seg->seg), (unsigned long)(eaddr.addr));
-		break;
-	    }
-	    clrtoeol();
-
-	//uword_t	opcode = instr.uword();
-	//uword_t ext = 0;
-	//uword_t	ereg;
-	//uint_t	uinput;
-	//int_t	sinput;
-	//uword_t	ea_bits;
-	//uword_t	easz = 2;
-	//int_t	offset = 0;
-	//int_t	disp = 0;
-	//int_t	index = 0;
-	//Addr	eaddr;
-
-	    auto ppc = debug->slines.upper_bound(Object::SourceLine{ pc.addr, pc.seg });
-	    int dln = 1;
-	    while(dln>-2 && ppc!=debug->slines.begin()) {
-		if(std::prev(ppc)->seg != pc.seg)
-		    break;
-		ppc--;
-		dln--;
-	    }
-	    mvaddstr(11, 0, std::format("PC: {:06o}:{:012o}", pc.seg, pc.addr).c_str());
-	    for(int ln=-3; ln<10; ln++) {
-		if(ln >= 0) {
-		    move(ln+14, 1);
-		    int l = ppc->len;
-		    Segment* s = seg(ppc->seg);
-		    if(s) {
-			const byte_t* mem = s->mem + ppc->addr;
-			if(l > 8)
-			    l = 6;
-			int i;
-			for(i=0; i<l; i+=2)
-			    addstr(std::format("{:06o} ", (mem[+i]<<9) | mem[i+1]).c_str());
-			if(i < l)
-			    addstr("...");
-		    }
-		}
-		clrtoeol();
-		move(ln+14, 29);
-		if(ln<dln || ppc==debug->slines.end() || ppc->seg!=pc.seg) {
-		    addstr(" ┊");
-		} else {
-		    if(ln==0) {
-			addstr((ppc->addr==pc.addr)? "──→": "~~↴");
-		    } else
-			addstr(" ┋ ");
-		    addstr(ppc->text.c_str());
-		    ppc++;
-		}
-		clrtoeol();
-	    }
-
-	    int	nl = LINES-26;
-	    if(nl > 16)
-		nl = 16;
-	    mvaddstr(25, 0, "╔════════════════════════════════════════════════════════════════╗"); clrtoeol();
-	    for(int i=0; i<nl; i++) {
-		mvaddstr(i+26, 0, "║");
-		clrtoeol();
-		for(int x=0; x<64; x++)
-		    if(screen_[i][x])
-			addch(screen_[i][x]);
-		mvaddstr(i+26, 65, "║");
-	    }
-	    mvaddstr(26+nl, 0, "╚════════════════════════════════════════════════════════════════╝"); clrtoeol();
-
-	    move(26+scr_y_, 1+scr_x_);
-	    refresh();
+	    display_cpu();
+	    display_insn_decode();
+	    display_console(26);
 	    char c = getch();
 	    if(c == 'b')
 		__asm__("int $3");
