@@ -20,7 +20,7 @@ u_pid		ds	2
 		da	inval_vec	; invalid instruction
 		da	perm_vec	; attempt to use a super segment while not super
 		da	access_vec	; rwx mismatch
-		da	notrap_vec
+		da	break_vec	; breakpoint
 		da	notrap_vec
 
 		da	trap0_vec
@@ -30,6 +30,8 @@ u_pid		ds	2
 context		da	0
 		da	0		; scratch
 
+version		db	27,'H,27,'J
+		db	"Nightmare bootstrap 0.1",13,10,10,0
 init_fname	db	"init.x",0
 
 kernel_stack	ds	256 * 6
@@ -43,6 +45,8 @@ perm_vec	trap	#14
 access_vec	trap	#14
 		rte
 fault_vec	trap	#14
+		rte
+break_vec	trap	#14 ; this one for real!  :-)
 		rte
 
 trap0_vec	trap	#14
@@ -84,6 +88,10 @@ reset_vec	lea	kernel_stack,a7
 		mov	d1,(4,a6)
 		mov	#@06,d0		; -rw-
 		mov	d0,(8,a6).w
+
+		lea	version,a0
+		mov	#3,d0
+		trap	#15
 
 		trap	#14
 

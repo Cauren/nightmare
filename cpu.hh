@@ -63,6 +63,8 @@ namespace Nightmare {
 	public:
 	    static byte_t*	mem_;
 	    static size_t	mem_alloc_;
+	    static wchar_t	screen_[16][64];
+	    static int		scr_x_, scr_y_;
 
 	    struct Trap;
 	    struct AReg;
@@ -70,6 +72,7 @@ namespace Nightmare {
 	    enum Trap_t {
 		Reset,
 		eLOOP, eFAULT, eINVAL, ePERM, eACCES,
+		eBREAK,
 	    };
 
 	    struct Segment {
@@ -307,12 +310,24 @@ eam
 | 0   1   1   0   0   0   0   0   0   0   1   0 |  ea.type  |   ea.reg  |	JMP ea
 | 0   1   1   0   0   0   0   0   1   0   0   0 |  ea.type  |   ea.reg  |	SSMA ea
 | 0   1   1   0   0   0   0   0   1   0   0   1 |  ea.type  |   ea.reg  |	SSML ea
+| 0   1   1   0   0   0   0   0   1   0   1   0 |  ea.type  |   ea.reg  |	PEA ea
 
 | 0   0   0   0   0 |      xx       |                 r9                |	bxx r9
 | 0   0   0   0   1 |      xx       |                 r9		|	bxx r27
 | 0   0   0   1   0   0   0   0   1 |                 i9		|	rts #unwind9
 | 0   0   0   1   0   0   0   1   0 |                 i9		|	rte #unwind9
 | 0   0   0   1   0   0   0   1   1 |                 i9		|	trap #n
+
+| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   0   0 |	nop
+| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   0   1 |	stop
+| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   1   0 |	bkpt
+
+TODO:	LINK/UNLK?
+	MULS/MULU
+	DIVS/DIVU
+	ROL/ROR
+	ROXL/ROXR
+	BCHG
 
 
 ea type:

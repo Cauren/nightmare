@@ -71,6 +71,9 @@ bool CPU::reset(void)
     ccr = 0;
     ir = 0777;
 
+    scr_x_ = scr_y_ = 0;
+    memset(screen_, 0, 16*64);
+
     for(int i=0; i<8; i++) {
 	d[i].data = 0;
 	a[i].seg = 0;
@@ -424,8 +427,22 @@ void CPU::run(void)
 		}
 		clrtoeol();
 	    }
-	    clrtobot();
 
+	    int	nl = LINES-26;
+	    if(nl > 16)
+		nl = 16;
+	    mvaddstr(25, 0, "╔════════════════════════════════════════════════════════════════╗"); clrtoeol();
+	    for(int i=0; i<nl; i++) {
+		mvaddstr(i+26, 0, "║");
+		clrtoeol();
+		for(int x=0; x<64; x++)
+		    if(screen_[i][x])
+			addch(screen_[i][x]);
+		mvaddstr(i+26, 65, "║");
+	    }
+	    mvaddstr(26+nl, 0, "╚════════════════════════════════════════════════════════════════╝"); clrtoeol();
+
+	    move(26+scr_y_, 1+scr_x_);
 	    refresh();
 	    char c = getch();
 	    if(c == 'b')
@@ -594,6 +611,9 @@ void CPU::run(void)
 	    int dreg = (opcode>>9) & 7;
 	    int_t sarg;
 	    uint_t uarg;
+	    decltype(eamode) bea = eamode;
+	    uword_t ber = ereg;
+
 
 	    if(todr) {
 		ea_read();
@@ -624,6 +644,67 @@ void CPU::run(void)
 			ccr&V = sarg>sinput;
 			ccr&Z = (uinput==sinput)? (uinput==uarg): (sinput==sarg);
 			break;
+	      case 020:	{					// MULU
+		  uintmax_t prod = uinput*uarg;
+		  ea_uwrite(prod);
+		  ccr&C = ccr&V = carry_<36>(prod);
+	        }
+		break;
+	      case 021:	{					// MULS
+		  intmax_t prod = sinput*sarg;
+		  ea_swrite(prod);
+		  ccr&V = overflow_<36>(prod);
+	        }
+		break;
+	      case 022:						// DIVU
+		if(uarg) {
+		    uint_t rem = uinput%uarg;
+		    uint_t q = uinput/uarg;
+		    if(todr) {
+			eamode = bea;
+			ereg = ber;
+			ea_uwrite(rem);
+			utest<36>(d[dreg].data = unsigned_<36>(q));
+		    } else {
+			d[dreg].data = unsigned_<36>(rem);
+			ea_uwrite(rem);
+		    }
+		} else {
+		    ccr&V = true;
+		}
+		break;
+	      case 023:						// DIVS
+		if(sarg) {
+		    int_t rem = sinput%sarg;
+		    int_t q = sinput/sarg;
+		    if(todr) {
+			eamode = bea;
+			ereg = ber;
+			ea_swrite(rem);
+			stest<36>(d[dreg].data = signed_<36>(q));
+		    } else {
+			d[dreg].data = signed_<36>(rem);
+			ea_swrite(rem);
+		    }
+		} else {
+		    ea_swrite(1l<<36);
+		}
+		break;
+	      case 024: ccr&C = uinput&1;			// ROR
+			ea_uwrite((uinput>>1) | ((uinput&1)<<(ea_bits-1)));
+			break;
+	      case 025:						// RORC
+			ea_uwrite((uinput>>1) | (ccr&C? 1l<<(ea_bits-1): 0));
+			ccr&C = uinput&1;
+			break;
+	      case 026: ccr&C = uinput&(1l<<(ea_bits-1));	// ROL
+			ea_uwrite((uinput<<1) | (ccr&C? 1: 0));
+			break;
+	      case 027:						// ROLC
+			ea_uwrite((uinput<<1) | (ccr&C? 1: 0));
+			ccr&C = uinput&(1l<<(ea_bits-1));
+			break;
+	      case 030: ea_uwrite(uinput^(1l<<uarg)); break;	// BCOM
 	      case 031: ea_uwrite(uinput&~(1l<<uarg)); break;	// BCLR
 	      case 032: ea_uwrite(uinput|(1l<<uarg)); break;	// BSET
 	      case 033: ea_test(uinput&(1l<<uarg)); break;	// BTST
@@ -737,6 +818,14 @@ void CPU::run(void)
 		throw Fault{ eFAULT, pc };
 	    pc.seg = eaddr.seg->seg;
 	    pc.addr = eaddr.addr;
+	} else if(opcode == "011'000'001'010"_m) {		// PEA
+	    if(!eaddr)
+		throw Fault{ eFAULT, pc };
+	    Addr tos = addr(a[7]);
+	    tos.writes(6);
+	    tos.uword(eaddr.seg->seg);
+	    tos.ulong(eaddr.addr);
+	    a[7].addr += 6;
 	} else if(opcode == "011'000'001'0xx"_m) {		// Sxxx
 	    if(!(smr&SU))
 		throw Fault { ePERM, pc };
@@ -747,8 +836,21 @@ void CPU::run(void)
 	      default:
 	        throw Fault{ eINVAL, pc };
 	    }
-	} else
+	} else switch(opcode) {
+	  case 0133000:						// NOP
+	    break;
+	  case 0133001:						// STOP
+	    halted = true;
+	    break;
+	  case 0133002:						// BKPT
+	    pending |= 1l << int(eBREAK);
+	    break;
+	  case 0133003:						// CLC
+	    ccr&C = false;
+	    break;
+	  default:
 	    throw Fault{ eINVAL, pc };
+	}
 
 	if(!jump) {
 	    pc.addr = instr.addr;
