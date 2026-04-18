@@ -1485,6 +1485,8 @@ bool Assembly::assemble(int argc, const char** argv)
     for(auto& sl: source.lines) {
 	if(Instruction* i = sl.insn) {
 	    cseg = i->seg;
+	    if(cseg)
+		cseg->addr = i->addr;
 	    if(!i->pass2(*this)) {
 		if(i->ilen != i->bytes.size())
 		    fatal = sl.err(sl.entire, "Fatal: Instruction length desync ({} vs {})", i->ilen, i->bytes.size());
