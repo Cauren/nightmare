@@ -282,13 +282,16 @@ void CPU::run(void)
 
 	auto display_cpu = [&](void) -> void {
 	    mvaddstr(0, 0, "┏━━━┯━━━━━━━━━━━━━┳━━━┯━━━━━━━━━━━━━━━━━━━━┓");
+	    clrtoeol();
 	    for(int i=0; i<8; i++) {
 		std::string ln = std::format("┃ d{}│{:12o} ┃ a{}│{:>6o}:{:012o} ┃",
 					     i, signed_<36>(d[i].data),
 					     i, unsigned_<18>(a[i].seg), unsigned_<36>(a[i].addr));
 		mvaddstr(i+1, 0, ln.c_str());
+		clrtoeol();
 	    }
 	    mvaddstr(9, 0, "┗━━━┷━━━━━━━━━━━━━┻━━━┷━━━━━━━━━━━━━━━━━━━━┛");
+	    clrtoeol();
 
 	    auto ppc = debug->slines.upper_bound(Object::SourceLine{ pc.addr, pc.seg });
 	    int dln = 1;
@@ -298,6 +301,8 @@ void CPU::run(void)
 		ppc--;
 		dln--;
 	    }
+	    move(10, 0);
+	    clrtoeol();
 	    mvaddstr(11, 0, std::format("PC: {:06o}:{:012o}", pc.seg, pc.addr).c_str());
 	    for(int ln=-3; ln<10; ln++) {
 		if(ln >= 0) {
@@ -867,6 +872,14 @@ void CPU::run(void)
 	    fault = f.fault;
 	}
     }
+
+    if(dodebug)
+    {
+	display_cpu();
+	display_insn_decode();
+	display_console(26);
+    } else
+	display_console(0);
 }
 
 

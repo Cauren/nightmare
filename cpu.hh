@@ -206,7 +206,7 @@ namespace Nightmare {
 	    AReg			fault;
 
 	    Object*			debug = nullptr;
-	    bool			dodebug = true;
+	    bool			dodebug = false;
 
 	    template<uint_t bits> void utest(int_t v) {
 		int_t sign = 1l << (bits-1);
