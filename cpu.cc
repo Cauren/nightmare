@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fstream>
+#include <pty.h>
 #include "cpu.hh"
 #include "object.hh"
 
@@ -70,9 +71,6 @@ bool CPU::reset(void)
     smr = SU | RST;
     ccr = 0;
     ir = 0777;
-
-    scr_x_ = scr_y_ = 0;
-    memset(screen_, 0, 16*64);
 
     for(int i=0; i<8; i++) {
 	d[i].data = 0;
@@ -200,30 +198,7 @@ void CPU::run(void)
     bool halted = false;
     while(!halted) try {
 
-	auto display_console = [&](int ln=0) -> void {
-	    int	nl = LINES-ln;
-	    if(nl > 16)
-		nl = 16;
-	    mvaddstr(25, 0, "╔════════════════════════════════════════════════════════════════╗"); clrtoeol();
-	    for(int i=0; i<nl; i++) {
-		mvaddstr(i+ln, 0, "║");
-		clrtoeol();
-		for(int x=0; x<64; x++)
-		    if(screen_[i][x])
-			addch(screen_[i][x]);
-		mvaddstr(i+ln, 65, "║");
-	    }
-	    mvaddstr(ln+nl, 0, "╚════════════════════════════════════════════════════════════════╝");
-	    clrtobot();
-
-	    move(ln+scr_y_, 1+scr_x_);
-	    refresh();
-	};
-
 	if(pending) {
-	    if(!dodebug)
-		display_console(0);
-
 	    int tr;
 	    for(tr=0; tr<24; tr++)
 		if(pending & (1l << tr))
@@ -453,7 +428,6 @@ void CPU::run(void)
 	if(dodebug && debug) {
 	    display_cpu();
 	    display_insn_decode();
-	    display_console(26);
 	    char c = getch();
 	    if(c == 'b')
 		__asm__("int $3");
@@ -866,14 +840,9 @@ void CPU::run(void)
 	    pc.addr = instr.addr;
 	};
 
-	if(halted) {
-	    if(dodebug)
-	    {
-		display_cpu();
-		display_insn_decode();
-		display_console(26);
-	    } else
-		display_console(0);
+	if(halted && dodebug) {
+	    display_cpu();
+	    display_insn_decode();
 	}
 
     } catch(const Fault& f) {
@@ -907,20 +876,50 @@ bool CPU::apply(Object& obj, bool super)
 }
 
 
+SCREEN*	CPU::debug_scr = nullptr;
+int	CPU::stdin = 0;
+int	CPU::stdout = 1;
+
 
 } // namespace Nightmare
 
 
 
 
-int main(int argc, char** argv) {
-    setlocale(LC_CTYPE, "");
-    initscr();
-    noecho();
-    cbreak();
-
+int main(int argc, char** argv)
+{
     Nightmare::CPU	cpu;
     Nightmare::Object	bootstrap;
+
+    setlocale(LC_CTYPE, "");
+
+    int	    pmaster;
+    int	    pslave;
+    char    ptyname[256]; // should be enough but seriously glibc?
+    termios tio = {
+	.c_iflag = IGNBRK|IUTF8,
+	.c_oflag = 0,
+	.c_cflag = 0,
+	.c_lflag = 0,
+    };
+    if(openpty(&pmaster, &pslave, ptyname, &tio, nullptr)) {
+	perror("openpty:");
+	return 1;
+    }
+
+    if(true) { // send console to pty
+	cpu.stdin = cpu.stdout = pmaster;
+	cpu.debug_scr = newterm(nullptr, stdout, stdin);
+    } else {
+	FILE* slave = fdopen(pslave, "r+");
+	cpu.debug_scr = newterm(nullptr, slave, slave);
+    }
+
+    std::string cmd = std::format("screen -X screen -t console '{}';screen -X other", ptyname);
+    system(cmd.c_str());
+
+    noecho();
+    cbreak();
 
     std::ifstream	bsfile("bootstrap.x");
     if(bsfile.bad()) {

@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <cstring>
+#include <ncursesw/curses.h>
 #include "cpu.hh"
 #include "object.hh"
 
@@ -56,68 +57,26 @@ static uint_t kmalloc(uint_t bytes)
     return pfree*page;
 }
 
-wchar_t	    CPU::screen_[16][64];
-int	    CPU::scr_x_ = 0;
-int	    CPU::scr_y_ = 0;
-
 void emit(byte_t ch)
 {
-    static int esc = 0;
-    static int row;
+    char    c[2];
+    if(ch > 127) {
+	c[0] = 0xC0|(ch>>6);
+	c[1] = 0x80|(ch&63);
+	write(CPU::stdout, c, 2);
+    }
+    else {
+	c[0] = ch;
+	write(CPU::stdout, c, 1);
+    }
+}
 
-    if(ch == 27) {
-	esc = 1;
-	return;
-    }
-    if(esc == 2) {
-	row = ch-31;
-	esc = 3;
-	return;
-    }
-    if(esc == 3) {
-	esc = 0;
-	int col = ch-31;
-	col = (col<0)? 0: (col>63)? 63: 0;
-	row = (row<0)? 0: (row>15)? 15: 0;
-	CPU::scr_x_ = col;
-	CPU::scr_y_ = row;
-	return;
-    }
-    bool scrup = false;
-    bool scrdn = false;
-    if(esc && ch>31) {
-	switch(ch) {
-	  case 'A': if(CPU::scr_y_) CPU::scr_y_--; break;
-	  case 'B': if(CPU::scr_y_<15) CPU::scr_y_++; break;
-	  case 'C': if(CPU::scr_x_<63) CPU::scr_x_++; break;
-	  case 'D': if(CPU::scr_x_) CPU::scr_x_--; break;
-	  case 'H': CPU::scr_x_ = CPU::scr_y_ = 0; break;
-	  case 'I': if(CPU::scr_y_) CPU::scr_y_--; else scrdn = true; break;
-	  case 'Y': esc = 2; return;
-	  case 'J': for(int y=CPU::scr_y_+1; y<16; y++) memset(CPU::screen_[y], 0, 64*sizeof(byte_t)); break;
-	  case 'K': for(int x=CPU::scr_x_; x<64; x++) CPU::screen_[CPU::scr_y_][x] = 0; break;
-	}
-	esc = 0;
-    } else {
-	esc = 0;
-	switch(ch) {
-	  case 8: if(CPU::scr_x_) CPU::scr_x_--; break;
-	  case 10: if(CPU::scr_y_<15) CPU::scr_y_++; else scrup = true; break;
-	  case 13: CPU::scr_x_ = 0; break;
-	  default:
-	    if(ch>31) {
-		CPU::screen_[CPU::scr_y_][CPU::scr_x_++] = ch;
-		if(CPU::scr_x_ > 63) {
-		    CPU::scr_x_ = 0;
-		    if(CPU::scr_y_ < 15)
-			CPU::scr_y_++;
-		    else
-			scrup = true;
-		}
-	    }
-	    break;
-	}
-    }
+int key(void)
+{
+    char    ch;
+    if(read(CPU::stdin, &ch, 1) == 1)
+	return (unsigned char)(ch);
+    return -1;
 }
 
 void CPU::oscall(void)
@@ -220,6 +179,16 @@ void CPU::oscall(void)
 		}
 	    }
 	    throw EFAULT;
+
+	  case 4:
+	    emit(unsigned_<9>(d[1].data));
+	    break;
+
+	  case 5:
+	    refresh();
+	    d[0].data = signed_<9>(key());
+	    break;
+
 	}
     } catch(int e) {
 	d[0].data = signed_<36>(e);

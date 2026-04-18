@@ -17,6 +17,13 @@ _TEXT		seg	3
 _ini		lea	greeting,a0
 		mov	#3,d0
 		trap	#15
-		mov	#0,d1
+
+.1		mov	#5,d0
+		trap	#15
+		mov	d0,d1
 		mov	#4,d0
 		trap	#15
+		cmp	#'q,d1
+		bne	.1b
+
+		stop
