@@ -762,7 +762,7 @@ struct i_SEG: public Instruction {
 	} else if(src.operands.size() == 1) {
 
 	    Value v = a.eval(src.operands[0]);
-	    if(v.unresolved || v.type != Value::Seg || !v.seg)
+	    if(v.unresolved || !v.seg)
 		return src.err(src.operands[0], "SEG directive requires a segment argument");
 	    seg = v.seg;
 
