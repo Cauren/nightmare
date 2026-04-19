@@ -59,7 +59,7 @@ CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
     Segment* s = seg(segno);
 
     super |= smr&SU;
-    if(!s || a >= s->len)
+    if(!s || a > s->len)
 	throw Fault{ eFAULT, Addr(*s, a) };
     if(s->super && !super)
 	throw Fault{ ePERM, Addr(*s, a) };
