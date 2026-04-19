@@ -153,6 +153,7 @@ src_ea			: mem_ea
 abslist			: absolute ',' absolute				{ $$ = Ml(List, $1, $3); }
 			| absolute ',' STRING				{ $$ = Ml(List, $1, $3); }
 			| STRING					{ $$ = Ml(List, $1); }
+			| '#' STRING					{ $$ = Ml(List, $2.add(Mi(Value, 0))); }
 			| abslist ',' absolute				{ $$ = $1.add($3); }
 			| abslist ',' STRING				{ $$ = $1.add($3); }
 			;

@@ -959,9 +959,11 @@ struct i_DB: public Instruction {
     {
 	ilen = 0;
 	for(const auto n: src.operands) {
-	    if(n == Node::StringLit)
+	    if(n == Node::StringLit) {
 		ilen += n.str().size();
-	    else
+		if(n.size())
+		    ilen++;
+	    } else
 		ilen++;
 	}
 	return false;
@@ -972,6 +974,8 @@ struct i_DB: public Instruction {
 	words = false;
 	for(const auto n: src.operands) {
 	    if(n == Node::StringLit) {
+		if(n.size())
+		    bytes.emplace_back(n.str().size());
 		for(char c: n.str())
 		    bytes.emplace_back(c);
 	    } else {
