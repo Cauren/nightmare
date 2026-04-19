@@ -257,44 +257,46 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl, bool unsized)
 
     ea.type = EA::Address;
 
-    switch(n.type()) {
-      case Node::Address:
-	if(n == Node::Address) {
-	    v = eval(n[0]);
-	    if(n.size()>1 && n[1]==Node::Register) {
-		if(overflow_<18>(v.value)) {
-		    sl.err(n, "Value ({}) out of range", v.value);
-		    return true;
-		}
-		ea.resolved = !v.unresolved;
-		ea.reloc = Value::None;
-		ea.eabits = eam | 050 | (n[1].val()&7);
-		ea.sword(v.value);
-		return false;
-	    }
-	}
-	// fallthru
-      case Node::String:
-	ea.eabits = eam | 0072;
-
-	v = eval(n);
-
-	if(v.type != Value::Address) {
-	    sl.err(n, "Value does not resolve to an address");
-	}
-	if(v.seg && v.seg->type==Segment::Literal)
-	    segnum = v.seg->value;
-	ea.resolved = !v.unresolved;
-	ea.reloc = v.reloc;
-	ea.word(segnum);
-	ea.dword(v.value);
-	return false;
-      case Node::Register:
+    if(n == Node::Register) {
 	ea.type = EA::DReg;
 	ea.eabits = eam | (n.val()&7);
 	return false;
-    }
-    if(n != Node::EA) {
+
+    } else if(n != Node::EA) {
+
+	switch(n.type()) {
+	  case Node::Address:
+	    if(n == Node::Address) {
+		v = eval(n[0]);
+		if(n.size()>1 && n[1]==Node::Register) {
+		    if(overflow_<18>(v.value)) {
+			sl.err(n, "Value ({}) out of range", v.value);
+			return true;
+		    }
+		    ea.resolved = !v.unresolved;
+		    ea.reloc = Value::None;
+		    ea.eabits = eam | 050 | (n[1].val()&7);
+		    ea.sword(v.value);
+		    return false;
+		}
+	    }
+	    // fallthru
+	  default:
+
+	    v = eval(n);
+	    ea.eabits = eam | 0072;
+
+	    if(v.type != Value::Address) {
+		sl.err(n, "Value does not resolve to an address");
+	    }
+	    if(v.seg && v.seg->type==Segment::Literal)
+		segnum = v.seg->value;
+	    ea.resolved = !v.unresolved;
+	    ea.reloc = v.reloc;
+	    ea.word(segnum);
+	    ea.dword(v.value);
+	    return false;
+	}
 	sl.err(n, "Invalid operand for {}", sl.op.str());
 	return true;
     }
@@ -563,14 +565,16 @@ Value Assembly::eval(const Node& n)
 	  if(n.size()<1)
 	      break;
 	  Value v1 = eval(n[0]);
-	  if(n.size()>1) {
+	  if(n.size()>1 && n[1]==Node::String) {
 	      Symbol* sym = find(n[1].str());
 	      if(!sym || sym->type != Symbol::Seg)
 		  return { std::format("Qualifier '{}' is not a segment name", n[1].str()), &n[1] };
 	      return { Value::Address, v1.unresolved, v1.value, sym->seg,
 		  (sym->seg && sym->seg->type==Segment::Relocatable)? Value::AddrRel: Value::None };
 	  }
-	  return { Value::Address, v1.unresolved, v1.value, nullptr };
+	  if(v1.seg)
+	      return { Value::Address, v1.unresolved, v1.value, v1.seg };
+	  return { Value::Numeric, v1.unresolved, v1.value };
       }
 
       case Node::String: {
@@ -734,15 +738,17 @@ struct i_SEG: public Instruction {
 			return src.err(src.operands[0], "Literal SEG must be constant at the point of declaration");
 		    switch(v.type) {
 		      case Value::Numeric:
-			sym = a.make(src.label.str());
-			sym->type = Symbol::Seg;
-			seg = sym->seg = a.segs.emplace_back(
-			    new Segment{ Segment::Literal, false, uint32_t(v.value), src.label.str(), src.operands[0].str(), 0 }
-			);
-			sym->unresolved = false;
-			break;
-		      case Value::Seg:
 		      case Value::Address:
+			if(!v.seg) {
+			    sym = a.make(src.label.str());
+			    sym->type = Symbol::Seg;
+			    seg = sym->seg = a.segs.emplace_back(
+				new Segment{ Segment::Literal, false, uint32_t(v.value), src.label.str(), src.operands[0].str(), 0 }
+			    );
+			    sym->unresolved = false;
+			    break;
+			}
+		      case Value::Seg:
 			sym = a.make(src.label.str());
 			sym->type = Symbol::Seg;
 			seg = sym->seg = v.seg;

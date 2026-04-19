@@ -123,7 +123,7 @@ index			: DREG
 			| DREG '*' value				{ $$ = $1.add($3); }
 			;
 
-absolute		: expr
+absolute		: expr						{ $$ = Ml(Address, $1); };
 			| IDENT ':' expr				{ $$ = Ml(Address, $3, $1); }
 			;
 
