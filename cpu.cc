@@ -411,7 +411,7 @@ void CPU::run(void)
 		} else
 		    eaddr = addr(pc);
 		eaddr += offset;
-		if(eamode == PostIndex) {
+		if(eamode == PreIndex) {
 		    disp += index;
 		} else
 		    eaddr += index;
