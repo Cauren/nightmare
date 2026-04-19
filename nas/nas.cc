@@ -445,7 +445,7 @@ bool Assembly::ea(const Node& n, EA& ea, SourceLine& sl, bool unsized)
 	  case Node::PostIndex:	extbits = 0700000; break;
 	}
 	extbits |= scale << 12;
-	extbits |= (v.value&7) << 9;
+	extbits |= int64_t(n[1].val()&7) << 9;
     } else switch(eat) {
       case Node::Indirect:	extbits = 0200000; break;
       case Node::PreIndex:	extbits = 0300000; break;
