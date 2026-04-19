@@ -96,6 +96,7 @@
 value			: LITERAL
 			| IDENT
 			| '-' value					{ $$ = Mi(Unary, '-', $2); }
+			| '+' value					{ $$ = Mi(Unary, '+', $2); }
 			| '~' value					{ $$ = Mi(Unary, '~', $2); }
 			| '(' expr ')'					{ $$ = $2; }
 			;

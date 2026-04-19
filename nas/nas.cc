@@ -557,6 +557,7 @@ Value Assembly::eval(const Node& n)
 	  switch(char(n.val())) {
 	    case '-':	v1.value = -v1.value; break;
 	    case '~':	v1.value = ~v1.value; break;
+	    case '+':	break;
 	  }
 	  return v1;
       }
