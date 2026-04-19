@@ -113,6 +113,7 @@ namespace nas {
 	std::string		name;
 	size_t			line;
 	FILE*			fd;
+	bool			pipe = false;
     };
 
     struct SourceLine {

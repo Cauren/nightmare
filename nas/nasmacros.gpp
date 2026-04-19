@@ -1,0 +1,21 @@
+#mode restore
+#mode user "\w!" "\w\n" "\b" "," "\n" "(" ")" "?" "\\"
+#mode meta "\w!" "\w\n" "\B" "\n" "\w!end\B" "" ""
+!mode string
+"\""
+"\""
+"\\"
+!end
+!mode comment
+scs
+"\w*"
+"\n"
+""
+!end
+!mode comment
+scs
+";"
+"\n"
+""
+!end
+!mode push!end

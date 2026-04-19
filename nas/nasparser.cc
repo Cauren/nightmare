@@ -78,6 +78,14 @@ namespace nas {
     bool Source::setup(const char* fname)
     {
 	InputFile* ifile = &files.emplace_back(InputFile{fname, 0, nullptr});
+
+	std::string gpp = std::format("gpp --includemarker '!? ? ?' --include {}macros.gpp '{}'", program_invocation_name, fname);
+	if(FILE* p = popen(gpp.c_str(), "r")) {
+	    ifile->fd = p;
+	    ifile->pipe = true;
+	    current = &ctx.emplace(LineContext{ifile, 0});
+	    return true;
+	}
 	if(FILE* fd = fopen(fname, "r")) {
 	    ifile->fd = fd;
 	    current = &ctx.emplace(LineContext{ifile, 0});
@@ -100,8 +108,12 @@ namespace nas {
 	    InputFile* i = current->file;
 
 	    if((!i->fd) || feof(i->fd) || ferror(i->fd)) {
-		if(i->fd)
-		    fclose(i->fd);
+		if(i->fd) {
+		    if(i->pipe)
+			pclose(i->fd);
+		    else
+			fclose(i->fd);
+		}
 		ctx.pop();
 		continue;
 	    }
@@ -115,7 +127,11 @@ namespace nas {
 	    ssize_t	len = getline(&line, &rlen, i->fd);
 
 	    if(len > 0) {
-		current->src = &lines.emplace_back(SourceLine{i, current->line, line});
+		if(line[0] == '!') {
+		    len = 0;
+		} else {
+		    current->src = &lines.emplace_back(SourceLine{i, current->line, line});
+		}
 	    }
 	    free(line);
 	    if(len <= 0)
