@@ -325,8 +325,9 @@ void CPU::run(void)
 	    switch(easz) {
 	      case 3:
 		memea = false;
-		uinput = opcode&077;
-		ea_bits = 6;
+		sinput = sex_<6>(opcode&077);
+		uinput = signed_<36>(sinput);
+		ea_bits = 36;
 		eamode = Immed;
 		break;
 	      case 0: ea_bits = 9; break;
@@ -466,8 +467,10 @@ void CPU::run(void)
 		    sinput = sex_<36>(uinput);
 		    break;
 		}
-	    } else
+	    } else {
 		sinput = sex_(ea_bits, uinput);
+		//uinput = signed_<36>(sinput);
+	    }
 	};
 
 	static auto ea_uwrite = [&](int_t n) -> void {
