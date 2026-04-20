@@ -426,11 +426,16 @@ next		mov	(a5)+,d0
 		bra	next
 
 		!asm	cold,"cold"
-		trap	#14
 		lea	_DATA:0,a4
 		lea	_STACK:0,a7
 		lea	_BSS:0,a6
 		lea	_cold,a5
+		lea	fault_handler,a0
+		clr	d0
+		trap	#0
+*		lea	break_handler,a0
+*		mov	#1,d0
+*		trap	#0
 		bra	next
 
 		seg	_DATA
@@ -440,6 +445,31 @@ _cold		dl	orig,plit,forth
 		dl	plit,dpsace,here,store
 		dl	abort
 
+fault_msg	db	#"memory fault"
+usp_msg		db	#"stack underrun"
+rsp_msg		db	#"return stack underrun"
+
+		seg	_TEXT
+fault_handler	sta	a6,d0
+		sta	a7,d1
+		lea	_DATA:0,a4
+		lea	_STACK:0,a7
+		lea	_BSS:4,a6
+		tst	d0
+		bpl	.2f
+		lea	a4:usp_msg,a0
+		bra	.3f
+.2		tst	d1
+		bpl	.2f
+		lea	a4:rsp_msg,a0
+		bra	.3f
+.2		lea	a4:fault_msg,a0
+.3		sta	a0,d7
+		lea	a4:error+6,a5
+		bra	next
+
+*break_handler	trap	#14
+*
 		!colon	abort,"abort"
 		dl	spstore
 		dl	plit,10,base,store
