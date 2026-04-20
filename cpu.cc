@@ -197,7 +197,9 @@ static constexpr bool operator == (uword_t o, const opmask_& m) { return (o&m.ma
 
 void CPU::run(void)
 {
-    bool halted = false;
+    bool    halted = false;
+    Addr    instr;
+
     while(!halted) try {
 
 	if(pending) {
@@ -213,7 +215,7 @@ void CPU::run(void)
 	    pending = 0;
 	}
 
-	Addr	instr = addr(pc);
+	instr = addr(pc);
 	uword_t	ilen = 2;
 
 	instr.execs(2);
@@ -876,6 +878,10 @@ void CPU::run(void)
 	else {
 	    pending |= 1l << int(f.trap);
 	    fault = f.fault;
+	    if(instr) {
+		pc.addr = instr.addr;
+		pc.seg = instr.seg->seg;
+	    }
 	}
     }
 
