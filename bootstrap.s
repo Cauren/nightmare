@@ -8,6 +8,8 @@ num_segs	equ	32
 
 		org	16*num_segs
 u_pid		ds	2
+u_vec_fault	ds	6
+u_vec_break	ds	6
 
 		seg	_root
 		org	0
@@ -37,19 +39,35 @@ init_fname	db	"init.x",0
 kernel_stack	ds	256 * 6
 
 dfault_vec	trap	#14
-		rte
+		stop
+
 inval_vec	trap	#14
-		rte
+		stop
+
 perm_vec	trap	#14
-		rte
-access_vec	trap	#14
-		rte
-fault_vec	trap	#14
-		rte
-break_vec	trap	#14 ; this one for real!  :-)
+		stop
+
+access_vec	movm	d0,a0,(a7)+
+		lea	_uarea:u_vec_fault,a0
+		bsr	uspace_vec
+		stop
+
+fault_vec	movm	d0,a0,(a7)+
+		lea	_uarea:u_vec_fault,a0
+		bsr	uspace_vec
+		stop
+
+break_vec	movm	d0,a0,(a7)+
+		lea	_uarea:u_vec_break,a0
+		bsr	uspace_vec
+		trap	#14		; this one is legit :-)
 		rte
 
-trap0_vec	trap	#14
+trap0_vec	tst	d0
+		beq	.1f
+		sta	a0,_uarea:u_vec_break
+		rte
+.1		sta	a0,_uarea:u_vec_fault
 		rte
 
 reset_vec	lea	kernel_stack,a7
@@ -110,4 +128,15 @@ reset_vec	lea	kernel_stack,a7
 		mov	d0,(a7)+.w
 		clr	(a7)+
 		rte
+
+uspace_vec	tst	(a0).w
+		bne	.1f
+		tst	(2,a0)
+		beq	.2f
+.1		lda	(a0),a0
+		lea	(-6,a7),a7	; unbsr
+		sta	a0,(-16,a7)
+		movm	-(a7),d0,a0
+		rte
+.2		rts
 
