@@ -94,6 +94,8 @@ bool CPU::reset(void)
     return false;
 }
 
+bool doforth=false;
+
 void CPU::trap(byte_t num, const AReg& faddr)
 {
     if(num == 23) { // TRAP #15
@@ -253,6 +255,17 @@ void CPU::run(void)
 		break;
 	    }
 	    clrtoeol();
+	    move(1,46);
+	    if(doforth) {
+		addstr("Stack: ");
+		for(int i=0; i<a[6].addr; i+=4) {
+		    Addr si = addr(a[6].seg, i);
+		    wprintw(stdscr, "%ld ", si.slong());
+		}
+		if(a[6].addr)
+		    wprintw(stdscr, "| %ld", sex_<36>(d[7].data));
+	    }
+	    clrtoeol();
 	};
 
 	auto display_cpu = [&](void) -> void {
@@ -404,11 +417,9 @@ void CPU::run(void)
 
 	    if(memea && eamode != Absolute) {
 		if(ereg < 8) {
-		    if(eamode == PreDec)
-			a[ereg].addr -= (1<<easz);
 		    eaddr = addr(a[ereg]);
-		    if(eamode == PostInc)
-			a[ereg].addr += (1<<easz);
+		    if(eamode == PreDec)
+			eaddr -= (1<<easz);
 		} else
 		    eaddr = addr(pc);
 		eaddr += offset;
@@ -434,8 +445,19 @@ void CPU::run(void)
 		__asm__("int $3");
 	    if(c == 'c')
 		dodebug = false;
+	    if(c == 'f')
+		doforth = true;
 	    if(c == 'q') {
 		break;
+	    }
+	}
+
+	if(memea && eamode != Absolute) {
+	    if(ereg < 8) {
+		if(eamode == PreDec)
+		    a[ereg].addr -= (1<<easz);
+		if(eamode == PostInc)
+		    a[ereg].addr += (1<<easz);
 	    }
 	}
 
