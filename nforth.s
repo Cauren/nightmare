@@ -25,12 +25,12 @@ do?1 !end
 ?1_val !end
 !end
 !define br
-dl  pbranch
-		dl	?1-.
+dl  branch
+		dl	?1-.-4
 !end
 !define	zbr
-dl  pzbranch
-		dl	?1-.
+dl  zbranch
+		dl	?1-.-4
 !end
 
 _STACK		seg	0
@@ -67,13 +67,15 @@ _TEXT		seg	3
 		ds	192
 		!var	pad,"pad"
 		ds	64
+		!var	hld,"hld"
+		dl	0
 
-		!asm	at,"@"
+		!asm	fetch,"@"
 		lea	(a4,d7),a0
 		mov	(a0),d7
 		bra	next
 
-		!asm	cat,"c@"
+		!asm	cfetch,"c@"
 		lea	(a4,d7),a0
 		mov	(a0).b,d7
 		bra	next
@@ -83,6 +85,13 @@ _TEXT		seg	3
 		mov	-(a6),d0
 		mov	-(a6),d7
 		mov	d0,(a0)
+		bra	next
+
+		!asm	pstore,"+!"
+		lea	(a4,d7),a0
+		mov	-(a6),d0
+		mov	-(a6),d7
+		add	d0,(a0)
 		bra	next
 
 		!asm	cstore,"c!"
@@ -173,7 +182,7 @@ _TEXT		seg	3
 		beq	true_
 		clr	d7
 		bra	next
-true_		mov	#1,d7
+true_		mov	#-1,d7
 		bra	next
 
 		!asm	zless,"0<"
@@ -188,18 +197,6 @@ true_		mov	#1,d7
 		clr	d7
 		bra	next
 
-		!asm	emit,"emit"
-		mov	d7,d1
-		mov	-(a6),d7
-		mov	#4,d0
-		trap	#15
-		bra	next
-
-		!colon	cr,"cr"
-		dl	plit,13,emit
-		dl	plit,10,emit
-		dl	psemi
-
 		!colon	query,"query"
 		dl	tib,plit,132,expect,zero,in,store
 		dl	psemi
@@ -210,7 +207,7 @@ true_		mov	#1,d7
 		bra	next
 
 		!asm	pvocab,"(vocab)"
-		mov	(a0),d0
+		sta	a0,d0
 		mov	d0,a4:context_val
 		bra	next
 
@@ -228,8 +225,8 @@ true_		mov	#1,d7
 		bra	next
 
 		!asm	cfa,"cfa"
-		mov	(a4,d7,7).b,d0
-		add	#8,d0
+		mov	(a4,d7,5).b,d0
+		add	#6,d0
 		btst	#0,d0
 		beq	.2f
 		inc	d0
@@ -252,6 +249,58 @@ true_		mov	#1,d7
 next		mov	(a5)+,d0
 .2		lea	(a4,d0,6),a0
 		jmp	([-6,a0])
+
+		!asm	execute,"execute"
+		mov	d7,d0
+		mov	-(a6),d7
+		bra	.2b
+
+		!asm	zero,"0"
+		mov	d7,(a6)+
+		clr	d7
+		bra	next
+
+		!asm	one,"1"
+		mov	d7,(a6)+
+		mov	#1,d7
+		bra	next
+
+		!asm	minusone,"-1"
+		mov	d7,(a6)+
+		mov	#-1,d7
+		bra	next
+
+		!asm	oneplus,"1+"
+		inc	d7
+		bra	next
+
+		!asm	oneminus,"1-"
+		dec	d7
+		bra	next
+
+		!asm	comma,","
+		mov	a4:here_val,d0
+		mov	d7,(a4,d0)
+		add	#4,d0
+		mov	d0,a4:here_val
+		mov	-(sp),d7
+		bra	next
+
+		!asm	emit,"emit"
+		mov	d7,d1
+		mov	-(a6),d7
+		mov	#4,d0
+		trap	#15
+		bra	next
+
+		!colon	cr,"cr"
+		dl	plit,13,emit
+		dl	plit,10,emit
+		dl	psemi
+
+		!colon	space,"space"
+		dl	plit,32,emit
+		dl	psemi
 
 		!asm	definitions,"definitions"
 		mov	a4:context_val,d0
@@ -280,22 +329,100 @@ next		mov	(a5)+,d0
 		lea	_BSS:0,a6
 		bra	next
 
-		!asm	pbranch,"(branch)"
+		!asm	branch,"branch"
 		mov	(a5)+,d0
-		lda	d0,a5
+		lea	(a5,d0),a5
 		bra	next
 
-		!asm	pzbranch,"(0branch)"
+		!asm	zbranch,"0branch"
 		mov	(a5)+,d0
 		tst	d7
 		bne	.2f
-		lda	d0,a5
+		lea	(a5,d0),a5
 .2		mov	-(a6),d7
 		bra	next
 
 		!asm	plit,"(lit)"
 		mov	d7,(a6)+
 		mov	(a5)+,d7
+		bra	next
+
+		!colon	shash,"<#"
+		dl	pad,plit,63,plus,hld,store,psemi
+
+		!colon	hold,"hold"
+		dl	minusone,hld,pstore
+		dl	hld,fetch,cstore
+		dl	psemi
+
+		!colon	hash,"#"
+		dl	base,fetch,slashmod
+		dl	swap,plit,9,over,less
+		!zbr	.2f
+		dl	plit,7,plus
+.2		dl	plit,48,plus,hold,psemi
+
+		!colon	hashs,"#s"
+.2		dl	hash
+		dl	dup,zequal
+		!zbr	.2b
+		dl	psemi
+
+		!colon	ehash,"#>"
+		dl	drop
+		dl	hld,fetch
+		dl	pad,plit,63,plus,over,minus
+		dl	swap,oneminus,swap,over,cstore
+		dl	psemi
+
+		!colon	spaces,"spaces"
+		dl	zero,max,oneplus
+.2		dl	qdup
+		!zbr	fini
+		dl	space,oneminus
+		!br	.2b
+		dl	psemi
+
+		!colon	sign,"sign"
+		dl	swap,zless
+		!zbr	fini
+		dl	plit,'-,hold
+		dl	psemi
+
+		!colon	dotr,".r"
+		dl	swap,dup,abs
+		dl	shash,hashs,sign,ehash
+		dl	swap,over,cfetch,minus,spaces
+		dl	type
+		dl	psemi
+
+		!colon	dot,"."
+		dl	zero,dotr,psemi
+
+		!asm	max,"max"
+		mov	-(a6),d0
+		cmp	d0,d7
+		bgt	next
+		mov	d0,d7
+		bra	next
+
+		!asm	abs,"abs"
+		tst	d7
+		bpl	next
+		neg	d7
+		bra	next
+
+		!asm	less,"<"
+		cmp	-(a6),d7
+		bge	true_
+		clr	d7
+		bra	next
+
+		!asm	slashmod,"/mod"
+		mov	-(a6),d0
+		divs	d7,d0
+		mov	d7,(a6)+
+		mov	d0,d7
 		bra	next
 
 		!asm	cold,"cold"
@@ -310,24 +437,28 @@ next		mov	(a5)+,d0
 
 _cold		dl	orig,plit,forth
 		dl	plit,6,plus,store
+		dl	plit,dpsace,here,store
 		dl	abort
 
 		!colon	abort,"abort"
 		dl	spstore
 		dl	plit,10,base,store
-		dl	cr,plit,msg,type
 		dl	cr,pdotq
 		db	#"NVM Forth 0.1"
-		dl	cr,cr
-		dl	break
+		dl	cr
 		dl	forth,definitions
 		dl	quit
+
+		!colon	error,"error"
+		dl	space,pad,type
+		dl	plit,'?,emit,space
+		dl	type,quit
 
 		!colon	quit,"quit"
 		dl	lbrak
 .2		dl	rpstore,cr
-		dl	query,interp
-		dl	state,at,zequal
+		dl	query,interpret
+		dl	state,fetch,zequal
 		!zbr	.2b
 		dl	pdotq
 		db	#" Ok"
@@ -386,12 +517,119 @@ _type_a0	mov	(a0)+.b,d2
 		sta	a0,d7
 		bra	next
 
+		!colon	literal,"literal",1
+		dl	state,fetch
+		!zbr	.2f
+		dl	plit,plit,comma,comma
+.2		dl	psemi
+
+		!asm	number,"number"
+		lea	(a4,d7),a1
+		mov	#0,d5		    ; sign
+		mov	a4:base_val,d6	    ; base
+		mov	#0,d7		    ; value
+		mov	(a1)+.b,d4	    ; length
+		beq	.3f
+		mov	(a1)+.b,d0
+		cmp	#'-,d0
+		bne	.2f
+		mov	#1,d5		    ; negative
+		dec	d4
+		beq	.3f
+		mov	(a1)+.b,d0
+.2		sub	#'0,d0
+		blt	.3f
+		cmp	#10,d0
+		blt	.4f
+		sub	#'A-'0,d0
+		blt	.3f
+		cmp	#25+32,d0
+		bgt	.3f
+		cmp	#25,d0
+		ble	.5f
+		sub	#32,d0
+		bmi	.3f
+.5		add	#10,d0
+.4		cmp	d6,d0
+		bge	.3f
+		mulu	d6,d7
+		bvs	.3f
+		add	d0,d7
+		bvs	.3f
+		mov	(a1)+.b,d0
+		dec	d4
+		bne	.2b
+		tst	d5
+		beq	next
+		neg	d7
+		bra	next
+.3		lea	a4:badw_msg,a0
+		sta	a0,d7
+		lea	a4:error+6,a5
+		bra	next
+
+		seg	_DATA
+badw_msg	db	#"not found"
+
+		!asm	find,"find"
+		mov	d7,(a6)+
+		lea	a4:pad_val,a1	    ; word to match
+		mov	(a1)+.b,d2	    ; length to match
+		mov	a4:context_val,d0
+		mov	(a4,d0),d0
+		lea	(a4,d0),a2	    ; context
+		bsr	find_
+		bne	.2f
+		mov	a4:current_val,d0
+		mov	(a4,d0),d0
+		lea	(a4,d0),a2
+		bsr	find_
+.2		mov	d0,d7
+		bra	next
+
+find_		cmp	(5,a2).b,d2
+		bne	.3f
+		clr	d0
+.4		mov	(a2,d0,6).b,d1
+		cmp	(a1,d0).b,d1
+		bne	.3f
+		inc	d0
+		cmp	d0,d2
+		bne	.4b
+		sta	a2,d0
+		mov	d0,(a6)+
+		mov	(4,a2).b,d0
+		mov	d0,(a6)+
+		mov	#-1,d0
+		rts
+.3		mov	(a2),d0
+		lea	(a4,d0),a2
+		bne	find_
+		clr	d0
+		rts
+
+		!colon	interpret,"interpret"
+.2		dl	plit,32,word
+		dl	cfetch
+		!zbr	fini
+		dl	find
+		!zbr	.4f
+		!zbr	.3f
+		dl	state,fetch
+		!zbr	.3f
+		dl	cfa,comma
+		!br	.2b
+.3		dl	cfa,execute
+		!br	.2b
+.4		dl	pad,number,literal
+		!br	.2b
+fini		dl	psemi
+
 		!asm	expect,"expect"
 		mov	-(a6),d0
 		lea	(a4,d0),a2
 		dec	d7		    ; space for null
 		mov	#0,d6		    ; index into tib
-		bkpt
 .2		mov	#5,d0
 		trap	#15
 		cmp	#$08,d0
