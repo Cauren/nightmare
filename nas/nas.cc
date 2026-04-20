@@ -1229,8 +1229,8 @@ struct i_REL: public Instruction {
 	    return true;
 
 	int osz = 1;
-	if(src.operands[0].size() && src.operands[0][0] == Node::Size) {
-	    osz = src.operands[0][0].val();
+	if(src.operands[0].size()>1 && src.operands[0][1] == Node::Size) {
+	    osz = src.operands[0][1].val();
 	} else {
 	    // guess
 	    Value v = a.eval(src.operands[0]);
@@ -1256,7 +1256,7 @@ struct i_REL: public Instruction {
 	    if(overflow_<27>(disp))
 		return src.err(src.operands[0], "Operand out of range of long branch");
 	    disp = signed_<27>(disp);
-	    word(bits | (disp&0777));
+	    word(bits | (1l<<13) | (disp&0777));
 	    word(disp>>9);
 	}
 	return false;
