@@ -533,7 +533,7 @@ void CPU::run(void)
 	/*  */ if(opcode == "000'0xx'xxx"_m) {			// Bcc
 	    uint_t	dest = instr.addr;
 	    if(opcode == "000'01x"_m) {
-		instr.reads(2);
+		instr.execs(2);
 		dest = instr.uword() << 9;
 		dest = instr.addr + sex_<27>(dest | (opcode & 0777));
 	    } else
