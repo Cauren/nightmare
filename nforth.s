@@ -811,18 +811,19 @@ nothing_	dl	psemi
 		dec	d4
 		beq	.3f
 		mov	(a1)+.b,d0
-.2		sub	#'0,d0
-		blt	.3f
+.2		trap	#14
+		sub	#$30,d0
+		blo	.3f
 		cmp	#10,d0
-		blt	.4f
-		sub	#'A-'0,d0
-		blt	.3f
+		blo	.4f
+		sub	#$11,d0
+		blo	.3f
 		cmp	#25+32,d0
-		bgt	.3f
+		bhs	.3f
 		cmp	#25,d0
-		ble	.5f
+		bls	.5f
 		sub	#32,d0
-		bmi	.3f
+		blo	.3f
 .5		add	#10,d0
 .4		cmp	d6,d0
 		bge	.3f
@@ -844,6 +845,9 @@ nothing_	dl	psemi
 
 		seg	_DATA
 badw_msg	db	#"not found"
+
+		!asm	stop,"stop"
+		stop
 
 		!asm	find,"find"
 		mov	d7,(a6)+
