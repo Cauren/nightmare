@@ -108,7 +108,7 @@ SPACE		[ \t]
 '\p{Unicode}				VToken(LITERAL, Value, deutf8(text()+1, size()-1));
 
 <STRING>[^"\\\n]+			tmpstr += str();
-<STRING>\\\p{Unicode}			tmpstr += text()[0];
+<STRING>\\\p{Unicode}			tmpstr += str().substr(1);
 <STRING>["\n]				pop_state(); yylloc.begin.column=tmpstr_col; VToken(STRING, StringLit, tmpstr);
 <INITIAL>\"[^"\\\n]+			push_state(STRING); tmpstr_col=yylloc.begin.column; tmpstr = str().substr(1);
 
