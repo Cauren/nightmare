@@ -655,12 +655,12 @@ void CPU::run(void)
 	      case 000: ea_uwrite(uarg); break;			// MOV
 	      case 001: ea_swrite(sarg); break;			// SEX
 	      case 010: ea_swrite(sinput+sarg); break;		// ADD
-	      case 011: ea_swrite(sinput-sarg); break;		// SUB
 	      case 012: ea_uwrite(uinput+uarg+(ccr&C)); break;	// ADC
 	      case 013: ea_uwrite(uinput-uarg-(ccr&C)); break;	// SBC
 	      case 014: ea_uwrite(uinput&uarg); break;		// AND
 	      case 015: ea_uwrite(uinput|uarg); break;		// OR
 	      case 016: ea_uwrite(uinput^uarg); break;		// XOR
+	      case 011: ea_swrite(sinput-sarg); /* fallthru */	// SUB
 	      case 017: ccr&C = uarg>uinput;			// CMP
 			ccr&V = sarg>sinput;
 			ccr&Z = (uinput==sinput)? (uinput==uarg): (sinput==sarg);
