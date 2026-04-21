@@ -21,7 +21,11 @@ do?1 !end
 !word ?1,?2,dopcol,?3
 !end
 !define var
-!word ?1,?2,dopcreate,?3
+!word ?1,?2,dopvar,?3
+?1_val !end
+!end
+!define const
+!word ?1,?2,dopconst,?3
 ?1_val !end
 !end
 !define br
@@ -57,9 +61,9 @@ _TEXT		seg	3
 		dl	0
 		!var	current,"current"
 		dl	0
-		!var	latest,"latest"
+		!var	last,"last"
 		dl	0
-		!var	here,"here"
+		!const	here,"here"
 		dl	0
 		!var	in,"in"
 		dl	0
@@ -177,7 +181,7 @@ _TEXT		seg	3
 		xor	-(a6),d7
 		bra	next
 
-		!asm	equal,"equal"
+		!asm	equal,"="
 		sub	-(a6),d7
 		beq	true_
 		clr	d7
@@ -201,9 +205,14 @@ true_		mov	#-1,d7
 		dl	tib,plit,132,expect,zero,in,store
 		dl	psemi
 
-		!asm	pcreate,"(create)"
+		!asm	pvar,"(var)"
 		mov	d7,(a6)+
 		sta	a0,d7
+		bra	next
+
+		!asm	pconst,"(constant)"
+		mov	d7,(a6)+
+		mov	(a0),d7
 		bra	next
 
 		!asm	pvocab,"(vocab)"
@@ -233,15 +242,6 @@ true_		mov	#-1,d7
 .2		add	d0,d7
 		bra	next
 
-		!asm	pfa,"pfa"
-		mov	(a4,d7,7).b,d0
-		add	#12,d0
-		btst	#0,d0
-		beq	.2f
-		inc	d0
-.2		add	d0,d7
-		bra	next
-
 		!asm	pcol,"(:)"
 		sta	a5,d1
 		mov	d1,(a7)+
@@ -254,6 +254,15 @@ next		mov	(a5)+,d0
 		mov	d7,d0
 		mov	-(a6),d7
 		bra	.2b
+
+		!asm	pfa,"pfa"
+		mov	(a4,d7,5).b,d0
+		add	#12,d0
+		btst	#0,d0
+		beq	.2f
+		inc	d0
+.2		add	d0,d7
+		bra	next
 
 		!asm	zero,"0"
 		mov	d7,(a6)+
@@ -274,8 +283,20 @@ next		mov	(a5)+,d0
 		inc	d7
 		bra	next
 
+		!asm	fourplus,"4+"
+		add	#4,d7
+		bra	next
+
 		!asm	oneminus,"1-"
 		dec	d7
+		bra	next
+
+		!asm	fourminus,"4-"
+		sub	#4,d7
+		bra	next
+
+		!asm	fourtimes,"4*"
+		asl	#2,d7
 		bra	next
 
 		!asm	comma,","
@@ -283,7 +304,24 @@ next		mov	(a5)+,d0
 		mov	d7,(a4,d0)
 		add	#4,d0
 		mov	d0,a4:here_val
-		mov	-(sp),d7
+		mov	-(a6),d7
+		bra	next
+
+		!asm	ccomma,"c,"
+		mov	a4:here_val,d0
+		mov	d7,(a4,d0).b
+		inc	d0
+		mov	d0,a4:here_val
+		mov	-(a6),d7
+		bra	next
+
+		!asm	cfacomma,"cfa,"
+		mov	a4:here_val,d0
+		lda	(a4,d7),a0
+		sta	a0,(a4,d0)
+		add	#6,d0
+		mov	d0,a4:here_val
+		mov	-(a6),d7
 		bra	next
 
 		!asm	emit,"emit"
@@ -302,6 +340,9 @@ next		mov	(a5)+,d0
 		dl	plit,32,emit
 		dl	psemi
 
+		!colon	latest,"latest"
+		dl	last,fetch,psemi
+
 		!asm	definitions,"definitions"
 		mov	a4:context_val,d0
 		mov	d0,a4:current_val
@@ -313,7 +354,8 @@ next		mov	(a5)+,d0
 		!asm	key,"key"
 		mov	#5,d0
 		trap	#15
-		mov	d0,(a6)+
+		mov	d7,(a6)+
+		mov	d0,d7
 		bra	next
 
 		!asm	psemi,";s"
@@ -414,7 +456,13 @@ next		mov	(a5)+,d0
 
 		!asm	less,"<"
 		cmp	-(a6),d7
-		bge	true_
+		bgt	true_
+		clr	d7
+		bra	next
+
+		!asm	more,">"
+		cmp	-(a6),d7
+		blt	true_
 		clr	d7
 		bra	next
 
@@ -430,6 +478,9 @@ next		mov	(a5)+,d0
 		lea	_STACK:0,a7
 		lea	_BSS:0,a6
 		lea	_cold,a5
+		lea	dspace,a0
+		sta	a0,d0
+		mov	d0,a4:here_val
 		lea	fault_handler,a0
 		clr	d0
 		trap	#0
@@ -442,7 +493,6 @@ next		mov	(a5)+,d0
 
 _cold		dl	orig,plit,forth
 		dl	plit,6,plus,store
-		dl	plit,dpsace,here,store
 		dl	abort
 
 fault_msg	db	#"memory fault"
@@ -480,7 +530,7 @@ fault_handler	sta	a6,d0
 		dl	quit
 
 		!colon	error,"error"
-		dl	space,pad,type
+		dl	space,here,type
 		dl	plit,'?,emit,space
 		dl	type,quit
 
@@ -524,7 +574,8 @@ _type_a0	mov	(a0)+.b,d2
 		mov	a4:in_val,d3	    ; index into source
 		mov	#1,d4		    ; index into destination
 		lea	a4:tib_val,a1	    ; input buffer
-		lea	a4:pad_val,a0	    ; pad
+		mov	a4:here_val,d0	    ; output buffer
+		lea	(a4,d0),a0
 		bra	.3f
 .2		inc	d3
 .3		mov	(a1,d3).b,d0
@@ -550,8 +601,201 @@ _type_a0	mov	(a0)+.b,d2
 		!colon	literal,"literal",1
 		dl	state,fetch
 		!zbr	.2f
-		dl	plit,plit,comma,comma
+		dl	compile,plit,comma
 .2		dl	psemi
+
+		!asm	compile,"compile"
+		mov	a4:here_val,d0
+		mov	(a5)+,d1
+		mov	d1,(a4,d0)
+		add	#4,d0
+		mov	d0,a4:here_val
+		bra	next
+
+		!asm	align,"align"
+		mov	a4:here_val,d0
+		btst	#0,d0
+		beq	next
+		inc	d0
+		mov	d0,a4:here_val
+		bra	next
+
+		!asm	callot,"callot"
+		mov	a4:here_val,d0
+		add	d7,d0
+		mov	-(a6),d7
+		mov	d0,a4:here_val
+		bra	next
+
+		!colon	allot,"allot"
+		dl	fourtimes,callot,psemi
+
+		!colon	dquote,".\"",1
+		dl	qcomp,compile,pdotq
+		dl	plit,34,word,cfetch,oneplus
+		dl	callot,align,psemi
+
+		!colon	tick,"'",1
+		dl	plit,32,word,cfetch
+		!zbr	noword
+		dl	find
+		!zbr	.2f
+		dl	drop
+		dl	state,fetch
+		!zbr	.3f
+		dl	compile,plit,comma,psemi
+.3		dl	psemi
+.2		dl	plit,badw_msg,error
+
+		!colon	create,"create"
+		dl	here
+		dl	current,fetch,fetch,comma
+		dl	plit,2,ccomma,plit,32,word
+		dl	cfetch,oneplus,callot,align
+		dl	plit,pvar,cfacomma
+		dl	dup,last,store
+		dl	current,fetch,store
+		dl	psemi
+
+		!colon	unsmudge,"unsmudge"
+		dl	latest,fourplus
+		dl	dup,cfetch,plit,2,not,and,swap,cstore
+		dl	psemi
+
+		!colon	immediate,"immediate"
+		dl	latest,fourplus
+		dl	dup,cfetch,one,or,swap,cstore
+		dl	psemi
+
+		!asm	cfastore,"cfa!"
+		lea	(a4,d7),a1	    ; cfa to update
+		mov	-(a6),d0
+		mov	-(a6),d7
+		lda	(a4,d0),a0
+		sta	a0,(a1)
+		bra	next
+		
+		!asm	not,"not"
+		com	d7
+		bra	next
+
+		!colon	colon,":"
+		dl	create,rbrak
+		dl	zero
+		dl	psemi
+
+		!asm	depth,"depth"
+		sta	a6,d0
+		asr	#2,d0
+		mov	d7,(a6)+
+		mov	d0,d7
+		bra	next
+
+		!colon	if,"if",1
+		dl	qcomp
+		dl	compile,zbranch
+		dl	here,zero,comma
+		dl	one
+		dl	psemi
+
+		!colon	back,"back",2
+		dl	dup,here,swap,minus,fourminus,swap,store
+		dl	psemi
+
+		!colon	then,"then",1
+		dl	qcomp,one,qpairs,back
+		dl	psemi
+
+		!colon	else,"else",1
+		dl	qcomp,one,qpairs
+		dl	compile,branch,here,zero,comma
+		dl	swap,back
+		dl	one
+		dl	psemi
+
+		!colon	begin,"begin",1
+		dl	qcomp
+		dl	here,plit,2
+		dl	psemi
+
+		!colon	until,"until",1
+		dl	qcomp,plit,2,qpairs
+		dl	compile,zbranch,here,minus,fourminus,comma
+		dl	psemi
+
+		!colon	again,"again",1
+		dl	qcomp,plit,2,qpairs
+		dl	compile,branch,here,minus,fourminus,comma
+		dl	psemi
+
+		!colon	while,"while",1
+		dl	qcomp,plit,2,qpairs
+		dl	compile,zbranch,here,zero,comma
+		dl	plit,3
+		dl	psemi
+
+		!colon	repeat,"repeat",1
+		dl	qcomp,plit,3,qpairs,swap
+		dl	compile,branch,here,minus,fourminus,comma
+		dl	back
+		dl	psemi
+
+		!colon	qpairs,"?pairs"
+		dl	depth,one,more
+		!zbr	.2f
+		dl	equal
+		!zbr	.2f
+		dl	psemi
+.2		dl	plit,qpairs_msg,error
+
+qpairs_msg	db	#"unbalanced"
+qcomp_msg	db	#"compile only"
+
+		!colon	qcomp,"?comp"
+		dl	state,fetch,zequal
+		!zbr	fini
+		dl	plit,qcomp_msg,error
+
+		!colon	bcompile,"[compile]",1
+		dl	tick,cfa,comma,qsemi
+
+		!colon	semi,";",1
+		dl	qcomp,zero,qpairs
+		dl	lbrak
+		dl	compile,psemi
+		dl	plit,pcol,latest,cfa,cfastore
+		dl	unsmudge
+		dl	psemi
+
+		!asm	pdoes,"(does)",2
+		sta	a5,d0
+		mov	d0,(a7)+
+		mov	(a0)+,d0
+		lea	(a4,d0),a5
+		mov	d7,(a6)+
+		sta	a0,d7
+		bra	next
+
+		!colon	builds,"<builds"
+		dl	create,plit,nothing_,comma
+		dl	plit,pdoes,latest,cfa,cfastore
+nothing_	dl	psemi
+
+		!colon	does,"does>"
+		dl	rfrom,latest,pfa,store
+		dl	unsmudge
+		dl	psemi
+
+		!colon	qdepth,"?depth"
+		dl	depth,oneminus,more
+		!zbr	fini
+		dl	plit,usp_msg,error
+
+		!colon	variable,"variable"
+		dl	one,qdepth,create,comma,unsmudge,psemi
+
+		!colon	constant,"constant"
+		dl	one,qdepth,builds,comma,unsmudge,does,fetch,psemi
 
 		!asm	number,"number"
 		lea	(a4,d7),a1
@@ -603,7 +847,8 @@ badw_msg	db	#"not found"
 
 		!asm	find,"find"
 		mov	d7,(a6)+
-		lea	a4:pad_val,a1	    ; word to match
+		mov	a4:here_val,d0	    ; word to match
+		lea	(a4,d0),a1
 		mov	(a1)+.b,d2	    ; length to match
 		mov	a4:context_val,d0
 		mov	(a4,d0),d0
@@ -618,6 +863,9 @@ badw_msg	db	#"not found"
 		bra	next
 
 find_		cmp	(5,a2).b,d2
+		bne	.3f
+		mov	(4,a2).b,d0	    ; smudged?
+		btst	#1,d0
 		bne	.3f
 		clr	d0
 .4		mov	(a2,d0,6).b,d1
@@ -644,6 +892,7 @@ find_		cmp	(5,a2).b,d2
 		!zbr	fini
 		dl	find
 		!zbr	.4f
+		dl	one,and,zequal
 		!zbr	.3f
 		dl	state,fetch
 		!zbr	.3f
@@ -651,7 +900,7 @@ find_		cmp	(5,a2).b,d2
 		!br	.2b
 .3		dl	cfa,execute
 		!br	.2b
-.4		dl	pad,number,literal
+.4		dl	here,number,literal
 		!br	.2b
 fini		dl	psemi
 
@@ -723,5 +972,5 @@ _orig		equ	.
 		sta	a0,d7
 		bra	next
 
-
+		seg	_DATA
 dspace		ds	64*1024		    ; 64k of fun
