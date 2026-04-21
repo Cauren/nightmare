@@ -1,5 +1,6 @@
 #include <fstream>
 #include <sstream>
+#include <ncursesw/curses.h>
 #include "object.hh"
 
 namespace Nightmare {
