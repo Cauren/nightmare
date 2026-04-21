@@ -74,8 +74,9 @@ void emit(byte_t ch)
 int key(void)
 {
     char    ch;
-    if(read(CPU::stdin, &ch, 1) == 1)
+    if(read(CPU::stdin, &ch, 1) == 1) {
 	return (unsigned char)(ch);
+    }
     return -1;
 }
 
@@ -185,7 +186,13 @@ void CPU::oscall(void)
 	    break;
 
 	  case 5:
+
+#ifdef DEBUG
+
 	    refresh();
+
+#endif
+
 	    d[0].data = signed_<9>(key());
 	    break;
 

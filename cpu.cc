@@ -242,6 +242,8 @@ void CPU::run(void)
 	    "Absolute", "PostInc", "PreDec", "Indirect", "PreIndex", "PostIndex"
 	};
 
+#ifdef DEBUG
+
 	auto display_insn_decode = [&](void) -> void {
 	    mvaddstr(0, 46, "Decoded EA: "); addstr(eamode_name[int(eamode)]);
 	    switch(eamode) {
@@ -328,6 +330,10 @@ void CPU::run(void)
 	    }
 
 	};
+
+#endif
+
+	insn++;
 
 	eamode = None;
 	if((opcode>>16)&3) {
@@ -439,6 +445,8 @@ void CPU::run(void)
 
 	}
 
+#ifdef DEBUG
+
 	if(dodebug && debug) {
 	    display_cpu();
 	    display_insn_decode();
@@ -453,6 +461,8 @@ void CPU::run(void)
 		break;
 	    }
 	}
+
+#endif
 
 	if(memea && eamode != Absolute) {
 	    if(ereg < 8) {
@@ -867,10 +877,14 @@ void CPU::run(void)
 	    pc.addr = instr.addr;
 	};
 
+#ifdef DEBUG
+
 	if(halted && dodebug) {
 	    display_cpu();
 	    display_insn_decode();
 	}
+
+#endif
 
     } catch(const Fault& f) {
 	if(f.trap == eLOOP) // Double fault.  Give up.
@@ -922,6 +936,8 @@ int main(int argc, char** argv)
     Nightmare::CPU	cpu;
     Nightmare::Object	bootstrap;
 
+#ifdef DEBUG
+
     setlocale(LC_CTYPE, "");
 
     int	    pmaster;
@@ -952,6 +968,21 @@ int main(int argc, char** argv)
     noecho();
     cbreak();
 
+#else // DEBUG
+
+    termios tio, ptio;
+
+    if(!tcgetattr(0, &ptio)) {
+	tio = ptio;
+	tio.c_iflag = IUTF8;
+	tio.c_oflag = 0;
+	tio.c_cflag = 0;
+	tio.c_lflag = ISIG;
+	tcsetattr(0, TCSANOW, &tio);
+    }
+
+#endif
+
     std::ifstream	bsfile("bootstrap.x");
     if(bsfile.bad()) {
 	std::cerr << std::format("{}: bootstrap.x: {}", argv[0], std::strerror(errno)) << std::endl;
@@ -965,6 +996,17 @@ int main(int argc, char** argv)
     if(!cpu.reset())
 	cpu.run();
 
+#ifdef DEBUG
+
     endwin();
+
+#else
+
+    tcsetattr(0, TCSANOW, &ptio);
+
+#endif
+
+    std::cerr << std::format("\n\n--- Run complete, {} instructions decoded", cpu.insn) << std::endl;
+
 }
 

@@ -208,6 +208,8 @@ namespace Nightmare {
 	    Object*			debug = nullptr;
 	    bool			dodebug = true;
 
+	    uint64_t			insn = 0;
+
 	    static SCREEN*		debug_scr;
 	    static int			stdin;
 	    static int			stdout;
