@@ -2,72 +2,20 @@
 #include <cstddef>
 #include <concepts>
 
+#include "machine.hh"
+
 #ifndef NIGHTMARE_CPU_HH__
 #define NIGHTMARE_CPU_HH__
 
 namespace Nightmare {
 
-    // smallest integral types that can hold a 36-bit long
-    typedef uint_fast64_t	uint_t;
-    typedef int_fast64_t	int_t;
-
-    // smallest unsigned integral type that can hold an 18-bit word
-    typedef uint_fast32_t	uword_t;
-
-    // smallest usigned integral type that can hold a 9-bit byte
-    typedef uint_fast16_t	byte_t;
-
-    template<uint_t bits> constexpr bool overflow_(int_t n) {
-	int_t sign = 1l << (bits-1);
-	return n<=-sign || n>=sign;
-    }
-
-    template<uint_t bits> constexpr bool carry_(int_t n) {
-	return n & ~((1l<<bits)-1);
-    }
-
-    template<uint_t bits> constexpr uint_t signed_(int_t n) {
-	uint_t sign = 1l << (bits-1);
-
-	return (n<0)?
-	    ((n<=sign)? sign: sign|-n):
-	    ((n>=sign)? sign: n);
-    }
-    inline static constexpr uint_t signed_(uint_t bits, int_t n) {
-	uint_t sign = 1l << (bits-1);
-
-	return (n<0)?
-	    ((n<=sign)? sign: sign|-n):
-	    ((n>=sign)? sign: n);
-    }
-
-    template<uint_t bits> constexpr uint_t unsigned_(int_t n) {
-	return uint_t(n) & ((1l << bits) - 1);
-    }
-    inline static constexpr uint_t unsigned_(uint_t bits, int_t n) {
-	return uint_t(n) & ((1l << bits) - 1);
-    }
-
-    template<uint_t bits> constexpr int_t sex_(uint_t n) {
-	uint_t sign = 1l << (bits-1);
-	return (n&sign)? -(n^sign): n;
-    }
-    inline static constexpr int_t sex_(uint_t bits, uint_t n) {
-	uint_t	sign = 1l << (bits-1);
-	return (n&sign)? -(n^sign): n;
-    }
-
     class Object;
 
     class CPU {
 	public:
-	    static byte_t*	mem_;
-	    static size_t	mem_alloc_;
-	    static wchar_t	screen_[16][64];
-	    static int		scr_x_, scr_y_;
+	    Machine&		mach;
 
-	    struct Trap;
-	    struct AReg;
+	public:
 
 	    enum Trap_t {
 		Reset,
@@ -75,21 +23,40 @@ namespace Nightmare {
 		eBREAK,
 	    };
 
-	    struct Segment {
-		uword_t			seg;
-		bool			valid: 1,
-					super: 1,
-					read: 1,
-					write: 1,
-					exec: 1;
-		uint_t			len;
-		byte_t*			mem;
+	    struct Segment: public InMem {
+		static constexpr int	EXEC =	0000001;
+		static constexpr int	WRITE =	0000002;
+		static constexpr int	READ =	0000004;
+		static constexpr int	SUPER =	0000010;
+		static constexpr int	COW =	0000020;
+		static constexpr int	VALID =	0400000;
+
+		ULong			base;
+		ULong			size;
+		UWord			flags;
+		UWord			spare_;
+		ULong			segid;
 	    };
 
-	    struct AReg {
-		uint_t			addr;
-		uword_t			seg;
+	    struct ExceptionFrame: public InMem {
+		UWord			ccr;
+		UWord			ir;
+		UWord			smr;
+		SegAddr			fault;
+		SegAddr			usp;
+		SegAddr			pc;
 	    };
+
+	    struct CSeg {				// cached segment info
+		uword_t			seg;
+		uword_t			flags;
+		uint_t			len;
+		MemPtr			mem;
+	    };
+	    static CSeg			sixseven;
+
+	    // no struct AReg {}
+	    // it's defined in machine.hh
 
 	    struct Fault {
 		Trap_t			trap;
@@ -97,21 +64,21 @@ namespace Nightmare {
 	    };
 
 	    struct Addr {
-		Segment*		seg;
+		CSeg*			seg;
 		uint_t			addr;
 
 					Addr(void): seg(nullptr)					{ };
 					Addr(Addr&&) = default;
 					Addr(const Addr&) = default;
-					Addr(Segment& s, uint_t a): seg(&s), addr(a)			{ };
+					Addr(CSeg* s, uint_t a): seg(s), addr(a)			{ };
 
 					operator bool (void) const		{ return seg; };
 					operator AReg (void) const		{ return AReg{ addr, seg? seg->seg: 0777777 }; };
 
-		inline void		reads(uint_t len)			{ access(len, seg->read); };
-		inline void		writes(uint_t len)			{ access(len, seg->write); };
-		inline void		execs(uint_t len)			{ access(len, seg->exec); };
-		void			access(uint_t len, bool perm);
+		inline void		reads(uint_t len)			{ access(len, Segment::READ); };
+		inline void		writes(uint_t len)			{ access(len, Segment::WRITE); };
+		inline void		execs(uint_t len)			{ access(len, Segment::EXEC); };
+		void			access(uint_t len, int perm);
 
 		Addr&			operator = (nullptr_t)			{ seg = nullptr; return *this; };
 		Addr&			operator = (Addr&&) = default;
@@ -119,23 +86,12 @@ namespace Nightmare {
 		Addr&			operator += (int_t len)			{ addr += len; return *this; };
 		Addr&			operator -= (int_t len)			{ addr -= len; return *this; };
 
-		Addr			operator + (int_t offset)		{ return Addr(*seg, addr+offset); };
-
-		void			ubyte(std::integral auto n) noexcept	{ seg->mem[addr++] = unsigned_<9>(n); };
-		void			uword(std::integral auto n) noexcept	{ ubyte(n>>9); ubyte(n); };
-		void			ulong(std::integral auto n) noexcept	{ uword(n); uword(n>>18); };
-		void			sbyte(std::integral auto n) noexcept	{ ubyte(signed_<9>(n)); };
-		void			sword(std::integral auto n) noexcept	{ uword(signed_<18>(n)); };
-		void			slong(std::integral auto n) noexcept	{ ulong(signed_<36>(n)); };
-		void			areg(const AReg& ar) noexcept		{ uword(ar.seg); ulong(ar.addr); };
-		uint_t			ubyte(void) noexcept			{ return seg->mem[addr++]; };
-		uint_t			uword(void) noexcept			{ return (ubyte() << 9) | ubyte(); };
-		uint_t			ulong(void) noexcept			{ return uword() | (uword() << 18); };
-		int_t			sbyte(void) noexcept			{ return sex_<9>(ubyte()); };
-		int_t			sword(void) noexcept			{ return sex_<18>(uword()); };
-		int_t			slong(void) noexcept			{ return sex_<36>(ulong()); };
-		AReg			areg(void) noexcept			{ AReg ar; ar.seg = uword(); ar.addr = ulong();
-										  return ar; };
+		Bytes*			operator -> (void) const		{ return &seg->mem[addr]; };
+		Bytes&			operator [] (int_t i) const		{ return seg->mem[addr+i]; };
+		template<std::derived_from<InMem> T>
+		    T&			ref(int_t i=0) const			{ return seg->mem.ref<T>(addr, i); };
+		template<std::derived_from<InMem> T>
+					operator T& (void) const		{ return seg->mem.ref<T>(addr); };
 	    };
 
 	    struct DReg {
@@ -201,7 +157,7 @@ namespace Nightmare {
 	    uint_t			segmap = 0;
 	    uword_t			segmap_len = 0;
 
-	    Segment			scache[16];
+	    CSeg			scache[16];
 	    uint64_t			pending = 0;
 	    AReg			fault;
 
@@ -210,16 +166,12 @@ namespace Nightmare {
 
 	    uint64_t			insn = 0;
 
-	    static SCREEN*		debug_scr;
-	    static int			stdin;
-	    static int			stdout;
-
 	    template<uint_t bits> void utest(int_t v) {
 		int_t sign = 1l << (bits-1);
 		ccr&Z = v==0;
 		ccr&V = v==sign;
 		ccr&N = (v & sign) != 0;
-		ccr&C = (v & ~(1l<<bits));
+		ccr&C = (v & ~((1l<<bits)-1));
 	    };
 
 	    template<uint_t bits> void stest(int_t v) {
@@ -227,26 +179,29 @@ namespace Nightmare {
 		ccr&Z = v==0;
 		ccr&N = v<0;
 		ccr&V = v<=-sign || v>=sign;
-		ccr&C = (v & ~(1l<<bits));
+		ccr&C = (v & ~((1l<<bits)-1));
 	    };
 
-	    Segment*			seg(uword_t sn);
+					CPU(Machine& m): mach(m)		{ };
+
+	    CSeg*			seg(uword_t sn);
 	    Addr			addr(uword_t sn, uint_t a, bool super=false);
 	    Addr			addr(const AReg& ar)			{ return addr(ar.seg, ar.addr); };
 
 	    bool			apply(Object&, bool super=false);
 	    bool			reset(void);
+	    void			invalidate(void);
 	    void			trap(byte_t num, const AReg& t);
 	    void			run(void);
 	    void			oscall(void);
     };
 
-    inline void CPU::Addr::access(uint_t len, bool perm)
+    inline void CPU::Addr::access(uint_t len, int perm)
     {
-	if(!perm)
-	    throw Fault{ eACCES, *this };
 	if(!seg || addr+len > seg->len)
 	    throw Fault{ eFAULT, *this };
+	if(!(seg->flags & perm))
+	    throw Fault{ eACCES, *this };
     };
 
 };

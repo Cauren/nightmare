@@ -4,6 +4,7 @@
 #include <memory>
 #include <cstring>
 #include <ncursesw/curses.h>
+#include "machine.hh"
 #include "cpu.hh"
 #include "object.hh"
 
@@ -21,7 +22,7 @@ namespace Nightmare {
 static std::vector<int64_t> heap = { 2, 1 }; // first two pages are never available
 static constexpr size_t page = 4*1024;
 
-static uint_t kmalloc(uint_t bytes)
+uint_t Machine::kmalloc(uint_t bytes)
 {
     size_t  wants = (bytes+page-1) / page;
     size_t  pfree = 0;
@@ -47,7 +48,7 @@ static uint_t kmalloc(uint_t bytes)
 	nfree = 0;
     }
     if(nfree<wants) {
-	if((pfree+wants)/page > CPU::mem_alloc_)
+	if((pfree+wants) > mem_alloc/page)
 	    return 0;
 	heap.resize(pfree+wants);
     }
@@ -57,49 +58,50 @@ static uint_t kmalloc(uint_t bytes)
     return pfree*page;
 }
 
-void emit(byte_t ch)
+void Machine::output(byte_t ch)
 {
     char    c[2];
     if(ch > 127) {
 	c[0] = 0xC0|(ch>>6);
 	c[1] = 0x80|(ch&63);
-	write(CPU::stdout, c, 2);
+	write(1, c, 2);
     }
     else {
 	c[0] = ch;
-	write(CPU::stdout, c, 1);
+	write(1, c, 1);
     }
 }
 
-int key(void)
+byte_t Machine::input(void)
 {
     char    ch;
-    if(read(CPU::stdin, &ch, 1) == 1) {
+    if(read(0, &ch, 1) == 1) {
 	return (unsigned char)(ch);
     }
     return -1;
 }
+
 
 void CPU::oscall(void)
 {
     ccr&C = false;
 
     auto uaddr = [this](const AReg& reg, size_t len = 0, bool writes = false) -> Addr {
-	Segment* s = seg(reg.seg);
+	CSeg* s = seg(reg.seg);
 	if(!s || reg.addr+len > s->len)
 	    throw EFAULT;
-	if(len && !(writes? s->write: s->read))
+	if(len && !(s->flags & (writes? Segment::WRITE: Segment::READ)))
 	    throw EACCES;
-	if(s->super && !(smr&SU))
+	if((s->flags & Segment::SUPER) && !(smr&SU))
 	    throw EPERM;
-	return {*s, reg.addr};
+	return {s, reg.addr};
     };
 
     auto ustring = [this,&uaddr](const AReg& reg) -> std::string {
 	Addr s = uaddr(reg, 1);
 	std::string str;
 	while(s.addr < s.seg->len) {
-	    byte_t c = unsigned_<9>(s.seg->mem[s.addr++]);
+	    byte_t c = s.seg->mem[s.addr++].ub();
 	    if(!c)
 		return str;
 	    if(c<128)
@@ -118,7 +120,7 @@ void CPU::oscall(void)
 	  case 0: // kmalloc
 	    if(!(smr&SU))
 		throw EPERM;
-	    if(uint_t addr = kmalloc((d[1].data+page-1) / page)) {
+	    if(uint_t addr = mach.kmalloc((d[1].data+page-1) / page)) {
 		a[0].seg = 0777777;
 		a[0].addr = addr;
 	    } else
@@ -149,19 +151,20 @@ void CPU::oscall(void)
 			    continue;
 			if(s.value >= segmap_len)
 			    throw ENOMEM;
-			Addr segdata(*seg(0777777), segmap+16*s.value);
-			if((segdata+int_t(4)).ulong())
+			Segment&    seg = MemPtr(mach.mem).ref<Segment>(segmap, s.value);
+
+			if(seg.flags&Segment::VALID || seg.size)
 			    throw ENOMEM;
-			uint_t mem = kmalloc(s.size);
+			uint_t mem = mach.kmalloc(s.size);
 			if(!mem)
 			    throw ENOMEM;
-			segdata.ulong(mem);
-			segdata.ulong(s.size);
-			segdata.uword(s.value==3? 001: 006);
-			segdata.uword(0);
-			segdata.ulong(0);
+			seg.base = mem;
+			seg.size = s.size;
+			seg.flags = s.value==3? 001: 006;
+			seg.spare_ = 0;
+			seg.segid = 0;
 			for(const auto& d: s.data)
-			    memcpy(mem_+mem+d.addr, d.bytes.data(), d.bytes.size()*sizeof(byte_t));
+			    memcpy(mach.mem+mem+d.addr, d.bytes.data(), d.bytes.size()*sizeof(byte_t));
 		    }
 		} else
 		    throw ENOEXEC;
@@ -173,16 +176,16 @@ void CPU::oscall(void)
 		Addr s = uaddr(a[0], 1);
 		std::string str;
 		while(s.addr < s.seg->len) {
-		    byte_t c = unsigned_<9>(s.seg->mem[s.addr++]);
+		    byte_t c = s.seg->mem[s.addr++].ub();
 		    if(!c)
 			return;
-		    emit(c);
+		    mach.output(c);
 		}
 	    }
 	    throw EFAULT;
 
 	  case 4:
-	    emit(unsigned_<9>(d[1].data));
+	    mach.output(unsigned_<9>(d[1].data));
 	    break;
 
 	  case 5:
@@ -193,7 +196,7 @@ void CPU::oscall(void)
 
 #endif
 
-	    d[0].data = signed_<9>(key());
+	    d[0].data = signed_<9>(mach.input());
 	    break;
 
 	}

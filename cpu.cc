@@ -12,43 +12,39 @@
 
 namespace Nightmare {
 
-byte_t*	CPU::mem_ = nullptr;
-size_t	CPU::mem_alloc_ = 0;
-
 template<typename BIT>
 Nightmare::CPU::Bitreg<BIT>::Bits operator | (BIT b1, BIT b2)
 {
     return typename Nightmare::CPU::Bitreg<BIT>::Bits(b1) | b2;
 };
 
-CPU::Segment* CPU::seg(uword_t segno)
-{
-    Segment* s = scache+(segno&15);
+CPU::CSeg CPU::sixseven;
 
-    if(!s->valid || s->seg!=segno) {
-	switch(segno) {
-	  case 0777777:
-	    *s = { segno, true, true, true, true, true, mem_alloc_, mem_ };
-	    break;
-	  case 0777776:
-	    if(!segmap)
-		return nullptr;
-	    *s = { segno, true, true, true, true, false, 16*segmap_len, mem_+segmap };
-	    break;
-	  default:
-	    if(!segmap || segno>segmap_len)
-		return nullptr;
-	    else {
-		Addr segdata(*seg(0777777), segmap+16*segno);
-		uint_t sa = segdata.ulong();
-		uint_t sl = segdata.ulong();
-		uword_t sf = segdata.uword();
-		if(!sl)
-		    return nullptr;
-		*s = { segno, true, bool(sf&010), bool(sf&004), bool(sf&002), bool(sf&001), sl, mem_+sa };
-		break;
-	    }
+void CPU::invalidate(void)
+{
+    sixseven.seg = 0777777;
+    sixseven.mem = mach.mem;
+    sixseven.len = mach.mem_alloc;
+    sixseven.flags = Segment::VALID|Segment::SUPER|Segment::READ|Segment::WRITE|Segment::EXEC;
+    for(int i=0; i<16; i++)
+	scache[i].flags = 0;
+}
+
+CPU::CSeg* CPU::seg(uword_t segno)
+{
+    if(segno == 0777777)	// bypasses the cache entirely
+	return &sixseven;
+
+    CSeg* s = scache+(segno&15);
+
+    if(!(s->flags&Segment::VALID) || s->seg!=segno) {
+	if(!segmap || segno>=segmap_len) {
+	    s->seg = segno;
+	    s->flags = 0;
+	    throw Fault{ eFAULT, Addr(s, 0) };
 	}
+	const Segment& sd = MemPtr(mach.mem).ref<Segment>(segmap, segno);
+	*s = { segno, sd.flags, sd.size, mach.mem + sd.base };
     }
 
     return s;
@@ -56,14 +52,14 @@ CPU::Segment* CPU::seg(uword_t segno)
 
 CPU::Addr CPU::addr(uword_t segno, uint_t a, bool super)
 {
-    Segment* s = seg(segno);
+    CSeg* s = seg(segno);
 
     super |= smr&SU;
     if(!s || a > s->len)
-	throw Fault{ eFAULT, Addr(*s, a) };
-    if(s->super && !super)
-	throw Fault{ ePERM, Addr(*s, a) };
-    return Addr(*s, a);
+	throw Fault{ eFAULT, Addr(s, a) };
+    if((s->flags&Segment::SUPER) && !super)
+	throw Fault{ ePERM, Addr(s, a) };
+    return Addr(s, a);
 }
 
 bool CPU::reset(void)
@@ -80,14 +76,13 @@ bool CPU::reset(void)
     segmap = 0;
     segmap_len = 0;
 
-    for(int i=0; i<16; i++)
-	scache[i].valid = false;
+    invalidate();
 
     try {
 	Addr rvec = addr(0777777, 2, true); // We ignore segno for the reset vector
 	rvec.reads(4);
 	pc.seg = 0777777;
-	pc.addr = rvec.ulong();
+	pc.addr = rvec->ul();
     } catch(const Fault&) {
 	return true;
     }
@@ -116,23 +111,23 @@ void CPU::trap(byte_t num, const AReg& faddr)
 	    smr += SU;
 	}
 
-	Addr frame = addr(a[7]);
+	Addr fa = addr(a[7]);
+	fa.writes(24);
 
-	frame.writes(24);
-	frame.uword(uword_t(ccr));
-	frame.uword(uword_t(ir));
-	frame.uword(uword_t(osmr));
-	frame.areg(faddr);
-	frame.areg(usp);
-	frame.areg(pc);
+	auto& frame = (ExceptionFrame&)fa;
+	frame.ccr = ccr;
+	frame.ir = ir;
+	frame.smr = osmr;
+	frame.fault = faddr;
+	frame.usp = usp;
+	frame.pc = pc;
 
 	a[7].addr += 24;
 	ir = 0777;
 
 	Addr vec = addr(0777777, num*6);
 	vec.reads(6);
-	uword_t vs = vec.uword();
-	pc = AReg{ vec.ulong(), vs };
+	pc = (SegAddr&)vec;
 
     } catch(const Fault&) {
 
@@ -140,29 +135,6 @@ void CPU::trap(byte_t num, const AReg& faddr)
 
     }
 }
-
-#if 0
-void CPU::rte(void)
-{
-    a[7].addr -= 24;
-    Addr frame = addr(a[7]);
-
-    frame.reads(24);
-    ccr = frames.uword();
-    ir = frames.uword();
-    SM nsmr = frames.uword();
-    frame += 6; // skip fault
-    AReg usp = frame.areg();
-    pc = frame.areg();
-
-    if(!(nsmr & SM::Super)) {
-	ssp = a[7];
-	a[7] = usp;
-    }
-    smr = nsmr;
-}
-#endif
-
 
 struct opmask_ {
     uword_t	mask;
@@ -219,7 +191,9 @@ void CPU::run(void)
 	uword_t	ilen = 2;
 
 	instr.execs(2);
-	uword_t	opcode = instr.uword();
+	uword_t	opcode = instr->uw();
+	instr += 2;
+
 	uword_t ext = 0;
 	uword_t	ereg;
 	uint_t	uinput;
@@ -302,7 +276,7 @@ void CPU::run(void)
 		if(ln >= 0) {
 		    move(ln+14, 0);
 		    int l = ppc->len;
-		    Segment* s = seg(ppc->seg);
+		    CSeg* s = seg(ppc->seg);
 		    if(s) {
 			const byte_t* mem = s->mem + ppc->addr;
 			if(l > 8)
@@ -374,12 +348,14 @@ void CPU::run(void)
 		    break;
 		  case 040: // (d18,ar)
 		    instr.execs(2);
-		    disp = instr.sword();
+		    disp = instr->sw();
+		    instr += 2;
 		    break;
 		  case 050: // ar:d18
 		    eamode = Absolute;
 		    instr.execs(2);
-		    eaddr = addr(a[ereg].seg, instr.uword());
+		    eaddr = addr(a[ereg].seg, instr->uw());
+		    instr += 2;
 		    break;
 		  case 070:
 		    if((opcode&077) == 071) {
@@ -387,17 +363,19 @@ void CPU::run(void)
 			eamode = Immed;
 			if(easz==2) {
 			    instr.execs(4);
-			    uinput = instr.ulong();
+			    uinput = instr->ul();
+			    instr += 4;
 			} else {
 			    instr.execs(2);
-			    uinput = instr.uword();
+			    uinput = instr->uw();
+			    instr += 2;
 			}
 			break;
 		    } else if((opcode&077) == 072) {
 			eamode = Absolute;
 			instr.execs(6);
-			uword_t sn = instr.uword();
-			eaddr = addr(sn, instr.ulong());
+			eaddr = addr(instr[0].uw(), instr[2].ul());
+			instr += 6;
 			break;
 		    } else if((opcode&077) != 070) {
 			throw Fault{ eINVAL, pc };
@@ -406,13 +384,15 @@ void CPU::run(void)
 		    // fallthrough
 		  case 060:
 		    instr.execs(2);
-		    ext = instr.uword();
+		    ext = instr->uw();
+		    instr += 2;
 		    if(ext & (1<<17)) // has index
 			index = sex_<36>(d[(ext>>9) & 7].data) * (1 << ((ext>>12)&3));
 		    if((ext>>15) > 1) { // has offset
 			if(ext & (1<<14)) {
 			    instr.execs(2);
-			    offset = instr.sword();
+			    offset = instr->sw();
+			    instr += 2;
 			}
 			disp = sex_<9>(ext & 0777);
 		    } else
@@ -437,8 +417,8 @@ void CPU::run(void)
 		    eaddr += index;
 		if(eamode == PostIndex || eamode == PreIndex) {
 		    eaddr.reads(6);
-		    uword_t seg = eaddr.uword();
-		    eaddr = addr(seg, eaddr.ulong());
+		    uword_t seg = eaddr[0].uw();
+		    eaddr = addr(seg, eaddr[2].ul());
 		}
 		eaddr += disp;
 	    }
@@ -487,17 +467,17 @@ void CPU::run(void)
 		switch(easz) {
 		  case 0:
 		    rea.reads(1);
-		    uinput = rea.ubyte();
+		    uinput = rea->ub();
 		    sinput = sex_<9>(uinput);
 		    break;
 		  case 1:
 		    rea.reads(2);
-		    uinput = rea.uword();
+		    uinput = rea->uw();
 		    sinput = sex_<18>(uinput);
 		    break;
 		  default:
 		    rea.reads(4);
-		    uinput = rea.ulong();
+		    uinput = rea->ul();
 		    sinput = sex_<36>(uinput);
 		    break;
 		}
@@ -515,17 +495,17 @@ void CPU::run(void)
 	      case 0:
 		utest<9>(n);
 		eaddr.writes(1);
-		eaddr.ubyte(n);
+		eaddr->ub(n);
 		break;
 	      case 1:
 		utest<18>(n);
 		eaddr.writes(2);
-		eaddr.uword(n);
+		eaddr->uw(n);
 		break;
 	      default:
 		utest<36>(n);
 		eaddr.writes(4);
-		eaddr.ulong(n);
+		eaddr->ul(n);
 		break;
 	    } else
 		throw Fault{ eINVAL, pc };
@@ -539,17 +519,17 @@ void CPU::run(void)
 	      case 0:
 		stest<9>(n);
 		eaddr.writes(1);
-		eaddr.sbyte(n);
+		eaddr->sb(n);
 		break;
 	      case 1:
 		stest<18>(n);
 		eaddr.writes(2);
-		eaddr.sword(n);
+		eaddr->sw(n);
 		break;
 	      default:
 		stest<36>(n);
 		eaddr.writes(4);
-		eaddr.slong(n);
+		eaddr->sl(n);
 		break;
 	    } else
 		throw Fault{ eINVAL, pc };
@@ -571,7 +551,8 @@ void CPU::run(void)
 	    uint_t	dest = instr.addr;
 	    if(opcode == "000'01x"_m) {
 		instr.execs(2);
-		dest = instr.uword() << 9;
+		dest = instr->uw() << 9;
+		instr += 2;
 		dest = instr.addr + sex_<27>(dest | (opcode & 0777));
 	    } else
 		dest = instr.addr + sex_<9>(opcode & 0777);
@@ -579,10 +560,10 @@ void CPU::run(void)
 	      case 000: {					// BSR (no point to BRN)
 		  jump = true;
 		  Addr tos = addr(a[7]);
-		  tos.writes(6);
-		  tos.uword(pc.seg);
-		  tos.ulong(instr.addr);
 		  a[7].addr += 6;
+		  tos.writes(6);
+		  tos->uw(pc.seg);
+		  tos->ul(instr.addr);
 		  break;
 	      }
 	      case 001: jump = true; break;			// BRA
@@ -607,22 +588,21 @@ void CPU::run(void)
 	    a[7].addr -= 6;
 	    Addr frame = addr(a[7]);
 	    frame.reads(6);
-	    pc.seg = frame.uword();
-	    pc.addr = frame.ulong();
+	    pc = (SegAddr&)frame;
 	    jump = true;
 	} else if(opcode == "000'100'010"_m) {			// RTE
 	    if(!(smr&SU))
 		throw Fault{ ePERM, pc };
 	    a[7].addr -= 24;
-	    Addr frame = addr(a[7]);
+	    Addr fa = addr(a[7]);
+	    fa.reads(24);
+	    auto& frame = (ExceptionFrame&)fa;
 	    ssp = a[7];
-	    frame.reads(24);
-	    ccr = frame.uword();
-	    ir  = frame.uword();
-	    smr = frame.uword();
-	    frame.areg();
-	    a[7] = frame.areg();
-	    pc = frame.areg();
+	    ccr = frame.ccr;
+	    ir  = frame.ir;
+	    smr = frame.smr;
+	    a[7] = frame.usp;
+	    pc = frame.pc;
 	    jump = true;
 	} else if(opcode == "000'100'011'"_m) {			// TRAP
 	    pending |= 1l << ((opcode&017)+8);
@@ -756,19 +736,18 @@ void CPU::run(void)
 	} else if(opcode == "010'010'xxx'000"_m) {		// STS An,EA
 	    ea_readjust(2);
 	    eaddr.writes(2);
-	    eaddr.uword(a[(opcode>>9)&7].seg);
+	    eaddr->uw(a[(opcode>>9)&7].seg);
 	} else if(opcode == "010'010'xxx'100"_m) {		// LDS EA,An
 	    ea_readjust(2);
 	    eaddr.reads(2);
-	    a[(opcode>>9)&7].seg = eaddr.uword();
+	    a[(opcode>>9)&7].seg = eaddr->uw();
 	} else if(opcode == "010'010'xxx'001"_m) {		// STA An,EA
 	    if(eamode == DReg) {
 		d[ereg].data = unsigned_<36>(a[(opcode>>9)&7].addr);
 	    } else {
 		ea_readjust(6);
 		eaddr.writes(6);
-		eaddr.uword(a[(opcode>>9)&7].seg);
-		eaddr.ulong(a[(opcode>>9)&7].addr);
+		(SegAddr&)eaddr = a[(opcode>>9)&7];
 	    }
 	} else if(opcode == "010'010'xxx'101"_m) {		// LDA EA,An
 	    if(eamode == DReg) {
@@ -776,8 +755,7 @@ void CPU::run(void)
 	    } else {
 		ea_readjust(6);
 		eaddr.reads(6);
-		a[(opcode>>9)&7].seg = eaddr.uword();
-		a[(opcode>>9)&7].addr = eaddr.ulong();
+		a[(opcode>>9)&7] = (SegAddr&)eaddr;
 	    }
 	} else if(opcode == "010'010'xxx'110"_m) {		// LEA EA,An
 	    if(!eaddr)
@@ -785,8 +763,9 @@ void CPU::run(void)
 	    a[(opcode>>9)&7].seg = eaddr.seg->seg;
 	    a[(opcode>>9)&7].addr = eaddr.addr;
 	} else if(opcode == "011'000'000'x00"_m) {		// MOVM
-	    uword_t	regs = instr.uword();
+	    uword_t	regs = instr->uw();
 	    uword_t	size = 0;
+	    instr += 2;
 	    for(int i=0; i<18; i++)
 		if(regs & (1<<i))
 		    size += (i>14)? 2: ((i>7)? 6: 4);
@@ -797,29 +776,33 @@ void CPU::run(void)
 		eaddr.reads(size);
 		for(int i=0; i<18; i++) if(regs & (1<<i)) {
 		    if(i<8) {
-			d[i].data = eaddr.ulong();
+			d[i].data = eaddr->ul();
+			eaddr += 2;
 		    } else if(i<15) {
-			a[i&7].seg = eaddr.uword();
-			a[i&7].addr = eaddr.ulong();
+			a[i&7] = (SegAddr&)eaddr;
+			eaddr += 4;
 		    } else switch(i) {
-		      case 15:	ccr = eaddr.uword(); break;
-		      case 16:	ir  = eaddr.uword(); break;
-		      case 17:	smr = eaddr.uword(); break;
+		      case 15:	ccr = eaddr->uw(); break;
+		      case 16:	ir  = eaddr->uw(); break;
+		      case 17:	smr = eaddr->uw(); break;
 		    }
+		    eaddr += 2;
 		}
 	    } else {
 		eaddr.writes(size);
 		for(int i=0; i<18; i++) if(regs & (1<<i)) {
 		    if(i<8) {
-			eaddr.ulong(d[i].data);
+			eaddr->ul(d[i].data);
+			eaddr += 2;
 		    } else if(i<15) {
-			eaddr.uword(a[i&7].seg);
-			eaddr.ulong(a[i&7].addr);
+			(SegAddr&)eaddr = a[i&7];
+			eaddr += 4;
 		    } else switch(i) {
-		      case 15:	eaddr.uword(uword_t(ccr)); break;
-		      case 16:	eaddr.uword(uword_t(ir)); break;
-		      case 17:	eaddr.uword(uword_t(smr)); break;
+		      case 15:	eaddr->uw(ccr); break;
+		      case 16:	eaddr->uw(ir); break;
+		      case 17:	eaddr->uw(smr); break;
 		    }
+		    eaddr += 2;
 		}
 	    }
 	} else if(opcode == "011'000'000'001"_m) {		// JSR
@@ -827,8 +810,8 @@ void CPU::run(void)
 		throw Fault{ eFAULT, pc };
 	    Addr tos = addr(a[7]);
 	    tos.writes(6);
-	    tos.uword(pc.seg);
-	    tos.ulong(instr.addr);
+	    tos[0].uw(pc.seg);
+	    tos[2].ul(instr.addr);
 	    a[7].addr += 6;
 	    jump = true;
 	    pc.seg = eaddr.seg->seg;
@@ -844,8 +827,8 @@ void CPU::run(void)
 		throw Fault{ eFAULT, pc };
 	    Addr tos = addr(a[7]);
 	    tos.writes(6);
-	    tos.uword(eaddr.seg->seg);
-	    tos.ulong(eaddr.addr);
+	    tos[0].uw(eaddr.seg->seg);
+	    tos[2].ul(eaddr.addr);
 	    a[7].addr += 6;
 	} else if(opcode == "011'000'001'0xx"_m) {		// Sxxx
 	    if(!(smr&SU))
@@ -911,8 +894,8 @@ bool CPU::apply(Object& obj, bool super)
 	    if(s.value != 0777777)
 		continue;
 	    for(const auto& d: s.data)
-		if(d.addr+d.bytes.size() <= mem_alloc_)
-		    memcpy(mem_+d.addr, d.bytes.data(), d.bytes.size()*sizeof(byte_t));
+		if(d.addr+d.bytes.size() <= mach.mem_alloc)
+		    memcpy(mach.mem+d.addr, d.bytes.data(), d.bytes.size()*sizeof(byte_t));
 	}
     }
     if(obj.slines.size() || obj.syms.size())
@@ -921,9 +904,11 @@ bool CPU::apply(Object& obj, bool super)
 }
 
 
+#ifdef DEBUG
 SCREEN*	CPU::debug_scr = nullptr;
 int	CPU::stdin = 0;
 int	CPU::stdout = 1;
+#endif
 
 
 } // namespace Nightmare
@@ -933,7 +918,8 @@ int	CPU::stdout = 1;
 
 int main(int argc, char** argv)
 {
-    Nightmare::CPU	cpu;
+    Nightmare::Machine	machine;
+    Nightmare::CPU	cpu(machine);
     Nightmare::Object	bootstrap;
 
 #ifdef DEBUG
@@ -990,7 +976,7 @@ int main(int argc, char** argv)
     }
     bootstrap.load(bsfile);
 
-    cpu.mem_ = new Nightmare::byte_t[cpu.mem_alloc_ = 640*1024]; // 640K ought to be enough for anyone.  :-)
+    machine.mem = new Nightmare::byte_t[machine.mem_alloc = 640*1024]; // 640K ought to be enough for anyone.  :-)
     cpu.apply(bootstrap, true);
 
     if(!cpu.reset())
