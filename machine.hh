@@ -9,14 +9,14 @@
 namespace Nightmare {
 
     // smallest integral types that can hold a 36-bit long
-    typedef uint_fast64_t	uint_t;
-    typedef int_fast64_t	int_t;
+    typedef uint64_t	uint_t;
+    typedef int64_t	int_t;
 
     // smallest unsigned integral type that can hold an 18-bit word
-    typedef uint_fast32_t	uword_t;
+    typedef uint32_t	uword_t;
 
     // smallest usigned integral type that can hold a 9-bit byte
-    typedef uint_fast16_t	byte_t;
+    typedef uint16_t	byte_t;
 
     template<uint_t bits> constexpr bool overflow_(int_t n) {
 	int_t sign = 1l << (bits-1);
@@ -99,7 +99,7 @@ namespace Nightmare {
 
     template<size_t N> class nBytes: protected Bytes {
 	private:
-	    byte_t*		bytes_[N];
+	    byte_t		bytes_[N];
 
 	public:
 	    nBytes&		operator = (const nBytes&) = default;
