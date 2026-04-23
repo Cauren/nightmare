@@ -1,12 +1,12 @@
 #define _XOPEN_SOURCE_EXTENDED
 
-#include <ncursesw/curses.h>
 #include <string>
 #include <format>
 #include <cerrno>
 #include <cstring>
 #include <fstream>
 #include <pty.h>
+#include "machine.hh"
 #include "cpu.hh"
 #include "object.hh"
 
@@ -238,7 +238,7 @@ void CPU::run(void)
 		addstr("Stack: ");
 		for(int i=0; i<a[6].addr; i+=4) {
 		    Addr si = addr(a[6].seg, i);
-		    wprintw(stdscr, "%ld ", si.slong());
+		    wprintw(stdscr, "%ld ", si->sl());
 		}
 		if(a[6].addr)
 		    wprintw(stdscr, "| %ld", sex_<36>(d[7].data));
@@ -278,12 +278,12 @@ void CPU::run(void)
 		    int l = ppc->len;
 		    CSeg* s = seg(ppc->seg);
 		    if(s) {
-			const byte_t* mem = s->mem + ppc->addr;
+			MemPtr mem = s->mem + ppc->addr;
 			if(l > 8)
 			    l = 6;
 			int i;
 			for(i=0; i<l; i+=2)
-			    addstr(std::format("{:06o} ", (mem[+i]<<9) | mem[i+1]).c_str());
+			    addstr(std::format("{:06o} ", mem[i].uw()).c_str());
 			if(i < l)
 			    addstr("...");
 		    }
@@ -747,7 +747,9 @@ void CPU::run(void)
 	    } else {
 		ea_readjust(6);
 		eaddr.writes(6);
-		(SegAddr&)eaddr = a[(opcode>>9)&7];
+		SegAddr& s = (SegAddr&)eaddr;
+		s = a[(opcode>>9)&7];
+		eaddr.writes(6);
 	    }
 	} else if(opcode == "010'010'xxx'101"_m) {		// LDA EA,An
 	    if(eamode == DReg) {
@@ -905,11 +907,10 @@ bool CPU::apply(Object& obj, bool super)
 
 
 #ifdef DEBUG
-SCREEN*	CPU::debug_scr = nullptr;
-int	CPU::stdin = 0;
-int	CPU::stdout = 1;
-#endif
 
+SCREEN*	CPU::debug_scr = nullptr;
+
+#endif
 
 } // namespace Nightmare
 
@@ -941,9 +942,11 @@ int main(int argc, char** argv)
     }
 
     if(true) { // send console to pty
-	cpu.stdin = cpu.stdout = pmaster;
+	machine.stdin = machine.stdout = pmaster;
 	cpu.debug_scr = newterm(nullptr, stdout, stdin);
     } else {
+	machine.stdin = 0;
+	machine.stdout = 1;
 	FILE* slave = fdopen(pslave, "r+");
 	cpu.debug_scr = newterm(nullptr, slave, slave);
     }
@@ -977,6 +980,7 @@ int main(int argc, char** argv)
     bootstrap.load(bsfile);
 
     machine.mem = new Nightmare::byte_t[machine.mem_alloc = 640*1024]; // 640K ought to be enough for anyone.  :-)
+    memset(machine.mem, 0, machine.mem_alloc*sizeof(Nightmare::byte_t));
     cpu.apply(bootstrap, true);
 
     if(!cpu.reset())
