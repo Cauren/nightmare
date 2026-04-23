@@ -1,11 +1,15 @@
 #include <cstdint>
 #include <cstddef>
 #include <concepts>
+#ifdef DEBUG
+#include <ncursesw/curses.h>
+#endif
 
 #include "machine.hh"
 
 #ifndef NIGHTMARE_CPU_HH__
 #define NIGHTMARE_CPU_HH__
+
 
 namespace Nightmare {
 
@@ -163,6 +167,10 @@ namespace Nightmare {
 
 	    Object*			debug = nullptr;
 	    bool			dodebug = true;
+
+#ifdef DEBUG
+	    static SCREEN*		debug_scr;
+#endif
 
 	    uint64_t			insn = 0;
 
