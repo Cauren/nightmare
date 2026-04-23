@@ -562,8 +562,8 @@ void CPU::run(void)
 		  Addr tos = addr(a[7]);
 		  a[7].addr += 6;
 		  tos.writes(6);
-		  tos->uw(pc.seg);
-		  tos->ul(instr.addr);
+		  tos[0].uw(pc.seg);
+		  tos[2].ul(instr.addr);
 		  break;
 	      }
 	      case 001: jump = true; break;			// BRA
