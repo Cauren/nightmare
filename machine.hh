@@ -62,13 +62,9 @@ namespace Nightmare {
 	private:
 				InMem(void) = delete;
 				~InMem() = delete;
-
-	protected:
-	  byte_t*		bytes(void)			{ return reinterpret_cast<byte_t*>(this); };
-	  const byte_t*		bytes(void) const		{ return reinterpret_cast<const byte_t*>(this); };
     };
 
-    class Bytes: public InMem {
+    class Bytes {
 
 	private:
 	    static byte_t	ub(const byte_t* b)		{ return b[0]; };
@@ -80,6 +76,10 @@ namespace Nightmare {
 	    static void		sb(byte_t* b, int_t n)		{ ub(b, signed_<9>(n)); };
 	    static void		sw(byte_t* b, int_t n)		{ uw(b, signed_<18>(n)); };
 	    static void		sl(byte_t* b, int_t n)		{ ul(b, signed_<36>(n)); };
+
+	protected:
+	  byte_t*		bytes(void)			{ return reinterpret_cast<byte_t*>(this); };
+	  const byte_t*		bytes(void) const		{ return reinterpret_cast<const byte_t*>(this); };
 
 	public:
 	    byte_t		ub(void) const			{ return ub(bytes()); };
@@ -98,6 +98,9 @@ namespace Nightmare {
     };
 
     template<size_t N> class nBytes: protected Bytes {
+	private:
+	    byte_t*		bytes_[N];
+
 	public:
 	    nBytes&		operator = (const nBytes&) = default;
 	    nBytes&		operator = (nBytes&&) = default;
@@ -186,6 +189,8 @@ namespace Nightmare {
 		T&		ref(uint_t o=0, uint_t i=0)const{ return reinterpret_cast<T*>(ptr+o)[i]; };
 	    template<std::derived_from<InMem> T>
 				operator T& (void) const	{ return *reinterpret_cast<T*>(ptr); };
+
+	    MemPtr		operator + (int_t i)		{ return ptr+i; };
     };
 
     struct CPU;
@@ -197,6 +202,9 @@ namespace Nightmare {
 	    size_t		mem_alloc;
 
 	    std::vector<CPU*>	cpus;				// really not planning on multiprocessing but meh  :-)
+
+	    int			stdin;
+	    int			stdout;
 
 	public:
 	    uint_t		kmalloc(uint_t bytes);
