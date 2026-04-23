@@ -64,18 +64,18 @@ void Machine::output(byte_t ch)
     if(ch > 127) {
 	c[0] = 0xC0|(ch>>6);
 	c[1] = 0x80|(ch&63);
-	write(1, c, 2);
+	write(stdout, c, 2);
     }
     else {
 	c[0] = ch;
-	write(1, c, 1);
+	write(stdout, c, 1);
     }
 }
 
 byte_t Machine::input(void)
 {
     char    ch;
-    if(read(0, &ch, 1) == 1) {
+    if(read(stdin, &ch, 1) == 1) {
 	return (unsigned char)(ch);
     }
     return -1;
