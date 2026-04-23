@@ -959,9 +959,12 @@ int main(int argc, char** argv)
 
 #else // DEBUG
 
+    machine.stdin = 0;
+    machine.stdout = 1;
+
     termios tio, ptio;
 
-    if(!tcgetattr(0, &ptio)) {
+    if(!tcgetattr(machine.stdin, &ptio)) {
 	tio = ptio;
 	tio.c_iflag = IUTF8;
 	tio.c_oflag = 0;
