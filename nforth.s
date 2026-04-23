@@ -811,8 +811,7 @@ nothing_	dl	psemi
 		dec	d4
 		beq	.3f
 		mov	(a1)+.b,d0
-.2		trap	#14
-		sub	#$30,d0
+.2		sub	#$30,d0
 		blo	.3f
 		cmp	#10,d0
 		blo	.4f
