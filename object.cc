@@ -15,6 +15,7 @@ bool Object::load(std::istream& in)
     while(std::getline(in, line).good()) {
 	char		cmd[2];
 	uword_t		seg;
+	uword_t		flags;
 	uint_t		addr;
 	std::string	text;
 
@@ -23,8 +24,12 @@ bool Object::load(std::istream& in)
 	il >> cmd[0] >> cmd[1] >> std::oct;
 
 	/*  */ if(cmd[0]=='S' && cmd[1]=='L') {
-	    il >> seg >> addr >> text;
-	    cs = &segs.emplace_back(Segment{ text, seg, addr });
+	    il >> seg >> flags >> addr >> text;
+	    cs = &segs.emplace_back(Segment{ text, seg, addr, flags });
+	} else if(cmd[0]=='X' && cmd[1]=='S') {
+	    il >> seg >> addr;
+	    sseg = seg;
+	    saddr = addr;
 	} else if(cmd[0]=='D' && cmd[1]=='D') {
 	    il >> addr;
 	    Data& d = cs->data.emplace_back(Data{ addr });

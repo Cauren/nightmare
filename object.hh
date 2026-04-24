@@ -24,6 +24,7 @@ namespace Nightmare {
 	struct Segment {
 	    std::string		name;
 	    uword_t		value;
+	    uword_t		flags;
 	    uint_t		size;
 	    std::vector<Data>	data;
 	};
@@ -60,6 +61,8 @@ namespace Nightmare {
 	std::set<SourceLine>	slines;
 	std::set<Symbol>	syms;
 	std::vector<Segment>	segs;
+	uword_t			sseg = 0;
+	uint_t			saddr = 0;
 
 	bool			load(std::istream&);
 	const SourceLine&	source(uword_t seg, uint_t addr);

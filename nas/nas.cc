@@ -32,6 +32,7 @@ struct Segment {
     const std::string		filename;
     uint64_t			addr;
     uint64_t			length = 0;
+    uint16_t			flags = 0;
     std::list<Range_>		data;
 };
 
@@ -120,6 +121,9 @@ struct Assembly {
 				syms;
 
     Segment*			cseg = nullptr;
+
+    Segment*			sseg = 0;
+    uint64_t			saddr = 0;
 
 				Assembly(std::ostream& o, std::ostream& p=std::cerr): object(o), listing(p) { };
 
@@ -709,9 +713,6 @@ struct i_SEG: public Instruction {
     {
 	Segment* seg = nullptr;
 
-	if(src.operands.size() > 1)
-	    return src.err(src.operands[1], "Too many arguments for SEG directive");
-
 	if(src.label) {
 	    src.labeled = false;
 	    Symbol* sym = a.find(src.label.str());
@@ -728,13 +729,25 @@ struct i_SEG: public Instruction {
 	    } else {
 
 		if(src.operands[0] == Node::StringLit) {
+		    if(src.operands.size() > 1)
+			return src.err(src.operands[1], "Too many arguments for SEG directive");
+
 		    sym = a.make(src.label.str());
 		    sym->type = Symbol::Seg;
 		    seg = sym->seg = a.segs.emplace_back(
 			new Segment{ Segment::External, false, 0, src.label.str(), src.operands[0].str(), 0 }
 		    );
 		} else {
+		    if(src.operands.size() > 2)
+			return src.err(src.operands[1], "Too many arguments for SEG directive");
 		    Value v = a.eval(src.operands[0]);
+		    uint16_t flags = 004; // default to readonly
+		    if(src.operands.size() > 1) {
+			Value fv = a.eval(src.operands[1]);
+			if(fv.unresolved)
+			    return src.err(src.operands[1], "SEG mode must be constant at the point of declaration");
+			flags = uint16_t(fv.value);
+		    }
 		    if(v.unresolved)
 			return src.err(src.operands[0], "Literal SEG must be constant at the point of declaration");
 		    switch(v.type) {
@@ -746,6 +759,7 @@ struct i_SEG: public Instruction {
 			    seg = sym->seg = a.segs.emplace_back(
 				new Segment{ Segment::Literal, false, uint32_t(v.value), src.label.str(), src.operands[0].str(), 0 }
 			    );
+			    sym->seg->flags = flags;
 			    sym->unresolved = false;
 			    break;
 			}
@@ -865,6 +879,39 @@ struct i_EQU: public Instruction {
 
 	sym->unresolved = v.unresolved;
 	sym->value = uint64_t(v.value);
+	return false;
+    };
+
+};
+
+struct i_START: public Instruction {
+    inline static Opcode::List<i_START> opcodes = {
+	{ "START",	0 },
+    };
+
+    i_START(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    bool align(void)
+    {
+	return false;
+    };
+
+    bool pass2(Assembly& a)
+    {
+	if(needs(1))
+	    return true;
+	if(src.label)
+	    return src.err(src.label, "START cannot be labeled");
+	Value v = a.eval(src.operands[0]);
+
+	if(v.type!=Value::Address || v.unresolved || !v.seg)
+	    return src.err(src.operands[0], "START requires a fully resolved address");
+
+	if(a.sseg)
+	    return src.err(src.op, "START can only appear once");
+
+	a.sseg = v.seg;
+	a.saddr = v.value;
 	return false;
     };
 
@@ -1548,7 +1595,7 @@ bool Assembly::assemble(int argc, const char** argv)
 	}
 
     for(const auto& seg: segs) {
-	object << std::format("SL{:06o} {:09o} {}", seg->value, seg->length, seg->segname);
+	object << std::format("SL{:06o} {:09o} {:03o} {}", seg->value, seg->length, seg->flags, seg->segname);
 	for(const auto& r: seg->data) {
 	    int bytes = 0;
 	    uint64_t addr = r.from;
@@ -1564,6 +1611,10 @@ bool Assembly::assemble(int argc, const char** argv)
 	}
 	object << std::endl;
     }
+
+    if(sseg)
+	object << std::format("XS{:06o} {:09o}", sseg->value, saddr) << std::endl;
+
     if(debug) for(auto& sl: source.lines)
 	if(Instruction* i = sl.insn) {
 	    if(!i->seg || !i->ilen)
