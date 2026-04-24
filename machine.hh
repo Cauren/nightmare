@@ -58,12 +58,6 @@ namespace Nightmare {
 	return (n&sign)? -(n^sign): n;
     }
 
-    class InMem {
-	private:
-				InMem(void) = delete;
-				~InMem() = delete;
-    };
-
     class Bytes {
 
 	private:
@@ -154,7 +148,7 @@ namespace Nightmare {
 	    AReg&		operator = (const SegAddr&);
     };
 
-    class SegAddr: public InMem {
+    class SegAddr {
 	public:
 	    UWord		seg;
 	    ULong		addr;
@@ -178,19 +172,28 @@ namespace Nightmare {
 				MemPtr(const MemPtr&) = default;
 				MemPtr(MemPtr&&) = default;
 
-	    MemPtr&		operator = (nullptr_t)		{ ptr = nullptr; return *this; };
-	    MemPtr&		operator = (byte_t* p)		{ ptr = p; return *this; };
-	    MemPtr&		operator = (const MemPtr&)	= default;
-	    MemPtr&		operator = (MemPtr&&)		= default;
+	    MemPtr&		operator = (nullptr_t)			{ ptr = nullptr; return *this; };
+	    MemPtr&		operator = (byte_t* p)			{ ptr = p; return *this; };
+	    MemPtr&		operator = (const MemPtr&)		= default;
+	    MemPtr&		operator = (MemPtr&&)			= default;
 
-	    Bytes&		operator [] (uint_t i) const	{ return *reinterpret_cast<Bytes*>(ptr+i); };
-	    Bytes*		operator -> (void) const	{ return reinterpret_cast<Bytes*>(ptr); };
-	    template<std::derived_from<InMem> T>
-		T&		ref(uint_t o=0, uint_t i=0)const{ return reinterpret_cast<T*>(ptr+o)[i]; };
-	    template<std::derived_from<InMem> T>
-				operator T& (void) const	{ return *reinterpret_cast<T*>(ptr); };
+	    Bytes&		operator [] (size_t i) const		{ return *reinterpret_cast<Bytes*>(ptr+i); };
+	    Bytes*		operator -> (void) const		{ return reinterpret_cast<Bytes*>(ptr); };
+	    template<typename T>
+		T&		ref(size_t o=0, size_t i=0)const	{ return reinterpret_cast<T*>(ptr+o)[i]; };
+	    template<typename T>
+				operator T& (void) const		{ return *reinterpret_cast<T*>(ptr); };
 
-	    MemPtr		operator + (int_t i)		{ return ptr+i; };
+	    MemPtr		operator + (off_t i) const		{ return ptr+i; };
+	    MemPtr		operator - (off_t i) const		{ return ptr-i; };
+	    size_t		operator - (const MemPtr& mp)		{ return ptr-mp.ptr; };
+
+	    MemPtr&		operator += (off_t i)			{ ptr += i; return *this; };
+	    MemPtr&		operator -= (off_t i)			{ ptr -= i; return *this; };
+	    MemPtr		operator ++ (int)			{ ptr += 1; return ptr-1; };
+	    MemPtr&		operator ++ (void)			{ ptr += 1; return *this; };
+	    MemPtr		operator -- (int)			{ ptr -= 1; return ptr+1; };
+	    MemPtr&		operator -- (void)			{ ptr -= 1; return *this; };
     };
 
     struct CPU;

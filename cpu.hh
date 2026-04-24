@@ -27,7 +27,7 @@ namespace Nightmare {
 		eBREAK,
 	    };
 
-	    struct Segment: public InMem {
+	    struct Segment {
 		static constexpr int	EXEC =	0000001;
 		static constexpr int	WRITE =	0000002;
 		static constexpr int	READ =	0000004;
@@ -42,7 +42,7 @@ namespace Nightmare {
 		ULong			segid;
 	    };
 
-	    struct ExceptionFrame: public InMem {
+	    struct ExceptionFrame {
 		UWord			ccr;
 		UWord			ir;
 		UWord			smr;
@@ -92,9 +92,9 @@ namespace Nightmare {
 
 		Bytes*			operator -> (void) const		{ return &seg->mem[addr]; };
 		Bytes&			operator [] (int_t i) const		{ return seg->mem[addr+i]; };
-		template<std::derived_from<InMem> T>
+		template<typename T>
 		    T&			ref(int_t i=0) const			{ return seg->mem.ref<T>(addr, i); };
-		template<std::derived_from<InMem> T>
+		template<typename T>
 					operator T& (void) const		{ return seg->mem.ref<T>(addr); };
 	    };
 
