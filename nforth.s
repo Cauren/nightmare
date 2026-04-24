@@ -39,16 +39,17 @@ dl  zbranch
 
 _STACK		seg	0
 
-_DATA		seg	1
+_DATA		seg	1,@006
 		org	0
 
-_BSS		seg	2
+_BSS		seg	2,@006
 		org	0
 ustack		ds	4*1024
 
-_TEXT		seg	3
+_TEXT		seg	3,@001
 		org	0
-		bra	>docold
+
+		start	docold
 
 		seg	_DATA
 .1:		ds	2
