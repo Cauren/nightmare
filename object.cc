@@ -24,8 +24,8 @@ bool Object::load(std::istream& in)
 	il >> cmd[0] >> cmd[1] >> std::oct;
 
 	/*  */ if(cmd[0]=='S' && cmd[1]=='L') {
-	    il >> seg >> flags >> addr >> text;
-	    cs = &segs.emplace_back(Segment{ text, seg, addr, flags });
+	    il >> seg >> addr >> flags >> text;
+	    cs = &segs.emplace_back(Segment{ text, seg, flags, addr });
 	} else if(cmd[0]=='X' && cmd[1]=='S') {
 	    il >> seg >> addr;
 	    sseg = seg;
