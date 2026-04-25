@@ -206,8 +206,8 @@ namespace Nightmare {
 
 	    CSeg*			seg(uword_t sn);
 	    Addr			addr(uword_t sn, uint_t a, bool super=false);
-	    Addr			addr(const AReg& ar)			{ return addr(ar.seg, ar.addr); };
-	    MemPtr			mem(const AReg& ar)			{ return addr(ar); };
+	    Addr			addr(const AReg& ar, bool super=false)	{ return addr(ar.seg, ar.addr, super); };
+	    MemPtr			mem(const AReg& ar, bool super=false)	{ return addr(ar, super); };
 
 	    bool			apply(Object&, bool super=false);
 	    bool			reset(void);

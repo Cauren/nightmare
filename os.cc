@@ -145,8 +145,9 @@ namespace Nightmare {
 	ns.refs++;
 	seg.base = ns.base;
 	seg.size = ns.size;
-	seg.flags = ns.flags;
+	seg.flags = ns.flags | Segment::VALID;
 	seg.segid = segid;
+	invalidate();
 	return seg;
     }
 
@@ -166,6 +167,7 @@ namespace Nightmare {
 
 	seg.size = 0;
 	seg.flags = 0;
+	invalidate();
     }
 
     void CPU::freesegs(bool everything)
@@ -215,7 +217,7 @@ namespace Nightmare {
 		uint_t segid = mach.salloc(s.size);
 
 		segs[segid].ino = ino;
-		segs[segid].flags = s.flags;
+		segs[segid].flags = s.flags | CPU::Segment::VALID;
 
 		for(const auto& d: s.data)
 		    memcpy(mach.mem+segs[segid].base+d.addr, d.bytes.data(), d.bytes.size()*sizeof(byte_t));
@@ -511,6 +513,7 @@ namespace Nightmare {
 			np.status = Process::Ready;
 
 			procs.emplace(1, ns.base);
+			invalidate();
 
 		    } else {
 
@@ -518,9 +521,9 @@ namespace Nightmare {
 			for(int i=0; i<SEG_PER_PROC; i++)
 			    if(i != 4) {
 				np.segtable[i] = self.segtable[i];
-				if(np.segtable[i].flags & Segment::VALID) {
-				    if(np.segtable[i].flags & Segment::WRITE)
-					np.segtable[i].flags = (np.segtable[i].flags & ~Segment::WRITE) | Segment::COW;
+				if(self.segtable[i].flags & Segment::VALID) {
+				    if(self.segtable[i].flags & Segment::WRITE)
+					np.segtable[i].flags = (self.segtable[i].flags & ~Segment::WRITE) | Segment::COW;
 				    Nightmare::segs[np.segtable[i].segid].refs++;
 				}
 			    }
@@ -533,10 +536,11 @@ namespace Nightmare {
 			} while(!procs.emplace((np.pid = npid++), ns.base).second);
 
 			d[0].data = np.pid;
-			savectx(mem(ssp));
+			savectx(mem(ssp, true));
 
 			d[0].data = 0;
-			segmap = useg;
+			segmap = ns.base;
+			invalidate();
 		    }
 
 		}

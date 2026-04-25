@@ -4,7 +4,8 @@ _STACK		seg	0
 
 _DATA		seg	1,@004
 		org	0
-prompt		db	"# ", 0
+prompt		db	"# ",0
+what		db	"nforth.x",0
 
 _BSS		seg	2,@006
 		org	0
@@ -69,4 +70,14 @@ ex_dell		tst	d6
 ex_cr		clr	(a2,d6).b
 		rts
 
+
+_ini		mov	#6,d0
+		trap	#15
+		tst	d0
+		beq	.1f
+		stop
+
+.1		lea	what,a0
+		mov	#2,d0
+		trap	#15
 

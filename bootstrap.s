@@ -35,7 +35,7 @@ context		da	0
 version		db	"Nightmare bootstrap 0.1",13,10,10,0
 init_fname	db	"init.x",0
 
-kernel_stack	ds	256 * 6
+boot_stack	ds	64 * 6
 
 dfault_vec	trap	#14
 		stop
@@ -69,16 +69,15 @@ trap0_vec	tst	d0
 .1		sta	a0,_uarea:u_vec_fault
 		rte
 
-reset_vec	lea	kernel_stack,a7
+reset_vec	lea	boot_stack,a7
 		mov	#4*1024,d1
 
 		mov	#6,d0
 		trap	#15		; faux-fork()
 
-		lea	_root:context,a1
-		sta	a0,(a1)
-		lea	(a0),a6
-		ssma	(2,a1)
+		lea	(3*1024,a0),a7
+		sta	a0,d0
+		ssma	d0
 		mov	#num_segs,d0
 		ssml	d0
 
