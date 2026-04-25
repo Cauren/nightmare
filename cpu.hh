@@ -51,6 +51,11 @@ namespace Nightmare {
 		SegAddr			pc;
 	    };
 
+	    struct ContextFrame: public ExceptionFrame {
+		ULong			d[8];
+		SegAddr			a[7];
+	    };
+
 	    struct CSeg {				// cached segment info
 		uword_t			seg;
 		uword_t			flags;
@@ -78,6 +83,7 @@ namespace Nightmare {
 
 					operator bool (void) const		{ return seg; };
 					operator AReg (void) const		{ return AReg{ addr, seg? seg->seg: 0777777 }; };
+					operator MemPtr (void) const		{ return seg? seg->mem+addr: MemPtr(nullptr); };
 
 		inline void		reads(uint_t len)			{ access(len, Segment::READ); };
 		inline void		writes(uint_t len)			{ access(len, Segment::WRITE); };
@@ -100,6 +106,12 @@ namespace Nightmare {
 
 	    struct DReg {
 		int_t			data;
+
+		DReg&			operator = (DReg&&) = default;
+		DReg&			operator = (const DReg&) = default;
+		DReg&			operator = (const ULong& ul)		{ data = unsigned_<36>(ul); return *this; };
+
+					operator uint_t (void) const		{ return data; };
 	    };
 
 	    template<typename BIT> struct Bitreg {
@@ -195,6 +207,7 @@ namespace Nightmare {
 	    CSeg*			seg(uword_t sn);
 	    Addr			addr(uword_t sn, uint_t a, bool super=false);
 	    Addr			addr(const AReg& ar)			{ return addr(ar.seg, ar.addr); };
+	    MemPtr			mem(const AReg& ar)			{ return addr(ar); };
 
 	    bool			apply(Object&, bool super=false);
 	    bool			reset(void);
@@ -203,6 +216,9 @@ namespace Nightmare {
 	    void			freesegs(bool everything=false);
 	    Segment&			mmap(uint_t segid, uword_t segno);
 	    void			munmap(uword_t segno);
+
+	    void			savectx(MemPtr sp);
+	    void			loadctx(uint_t uarea);
 
 	    void			trap(byte_t num, const AReg& t);
 	    void			run(void);

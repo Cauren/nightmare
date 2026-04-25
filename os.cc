@@ -36,8 +36,20 @@ namespace Nightmare {
     // are needed for the bootstrap process.
 
     struct Process {
+	enum Status: uword_t {
+	    Ready, Sleep, Dead
+	};
+
 	CPU::Segment			segtable[SEG_PER_PROC];
+
+	UWord				pid;
+	UWord				ppid;
+	UWord				status;
+	ULong				sleep_on;
+	SegAddr				ssp;
     };
+    std::map<uword_t, uint_t>	procs;
+    uword_t			npid = 2;
 
     typedef decltype(stat::st_ino) Inode;
 
@@ -322,6 +334,51 @@ namespace Nightmare {
     // In addition,
     //	* if there is an error C is set and the errno is in d0
     
+    void CPU::savectx(MemPtr ssp_addr)
+    {
+	Process& self = MemPtr(mach.mem+segmap);
+
+	ContextFrame& cf = ssp_addr;
+
+	cf.ccr = ccr;
+	cf.ir = ir;
+	cf.smr = smr;
+	cf.fault = nullptr;
+	cf.usp = a[7];
+	cf.pc = pc;
+	for(int i=0; i<8; i++)
+	    cf.d[i] = d[i];
+	for(int i=0; i<7; i++)
+	    cf.a[i] = a[i];
+
+	ssp.addr += sizeof(ContextFrame);
+
+	self.ssp = ssp;
+    }
+
+    void CPU::loadctx(uint_t uarea)
+    {
+	Process& self = MemPtr(mach.mem+uarea);
+
+	ssp = self.ssp;
+	ssp.addr -= sizeof(ContextFrame);
+
+	ContextFrame& cf = MemPtr(mach.mem+uarea+ssp.addr);
+
+	ccr = cf.ccr;
+	ir = cf.ir;
+	smr = cf.smr;
+	a[7] = cf.usp;
+	pc = cf.pc;
+	for(int i=0; i<8; i++)
+	    d[i] = cf.d[i];
+	for(int i=0; i<7; i++)
+	    a[i] = cf.a[i];
+
+	segmap = uarea;
+	segmap_len = SEG_PER_PROC;
+    }
+
     void CPU::oscall(void)
     {
 	ccr&C = false;
@@ -422,25 +479,68 @@ namespace Nightmare {
 
 	      case 6: // fork
 
-		if(smr&SU) {
-		    // Special case: if we fork() from the kernel we aren't actually
-		    // forking, we're creating the initial context for the first
-		    // userspace, and returning an absolute pointer to that.
-
+		{
 		    uint_t  useg = mach.salloc(4096);
 		    Nightmare::Segment& ns = Nightmare::segs[useg];
-		    Segment* sm = &MemPtr(mach.mem).ref<Segment>(ns.base, 0);
-		    for(int i=0; i<SEG_PER_PROC; i++)
-			sm[i].flags =0;
-		    sm[4].base = ns.base;
-		    sm[4].size = ns.size;
-		    sm[4].flags = Segment::SUPER | Segment::READ | Segment::WRITE;
-		    sm[4].segid = useg;
+		    Process& np = MemPtr(mach.mem+ns.base);
+
+		    np.segtable[4].base = ns.base;
+		    np.segtable[4].size = ns.size;
+		    np.segtable[4].flags = Segment::SUPER | Segment::READ | Segment::WRITE;
+		    np.segtable[4].segid = useg;
 		    ns.refs = 1;
 
-		    a[0].seg = 0777777;
-		    a[0].addr = ns.base;
+		    np.ssp.seg = 4;
+		    np.ssp.addr = 3*1024;
+
+		    if(smr&SU) {
+
+			// Special case: if we fork() from the kernel we aren't actually
+			// forking, we're creating the initial context for the first
+			// userspace process, and returning an absolute pointer to that.
+
+			for(int i=0; i<SEG_PER_PROC; i++)
+			    if(i != 4)
+				np.segtable[i].flags = 0;
+
+			a[0].seg = 0777777;
+			a[0].addr = ns.base;
+
+			np.pid = 1;
+			np.ppid = 1;
+			np.status = Process::Ready;
+
+			procs.emplace(1, ns.base);
+
+		    } else {
+
+			Process& self = MemPtr(mach.mem+segmap);
+			for(int i=0; i<SEG_PER_PROC; i++)
+			    if(i != 4) {
+				np.segtable[i] = self.segtable[i];
+				if(np.segtable[i].flags & Segment::VALID) {
+				    if(np.segtable[i].flags & Segment::WRITE)
+					np.segtable[i].flags = (np.segtable[i].flags & ~Segment::WRITE) | Segment::COW;
+				    Nightmare::segs[np.segtable[i].segid].refs++;
+				}
+			    }
+
+			np.ppid = self.pid;
+			do {
+			    npid = unsigned_<18>(npid);
+			    if(!npid)
+				npid = 2;
+			} while(!procs.emplace((np.pid = npid++), ns.base).second);
+
+			d[0].data = np.pid;
+			savectx(mem(ssp));
+
+			d[0].data = 0;
+			segmap = useg;
+		    }
+
 		}
+
 		break;
 
 	    }

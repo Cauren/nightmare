@@ -44,7 +44,7 @@ CPU::CSeg* CPU::seg(uword_t segno)
 	    throw Fault{ eFAULT, Addr(s, 0) };
 	}
 	const Segment& sd = MemPtr(mach.mem).ref<Segment>(segmap, segno);
-	*s = { segno, sd.flags, sd.size, mach.mem + sd.base };
+	*s = { segno, uword_t(sd.flags), sd.size, mach.mem + sd.base };
     }
 
     return s;

@@ -155,6 +155,7 @@ namespace Nightmare {
 
 	public:
 	    SegAddr&		operator = (const AReg& ar)	{ seg = ar.seg; addr = ar.addr; return *this; };
+	    SegAddr&		operator = (nullptr_t)		{ seg = 0; addr = 0; return *this; };
     };
 
     inline AReg& AReg::operator = (const SegAddr& sa) {
