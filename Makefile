@@ -2,6 +2,8 @@
 CCOPT := -g3 -O0 -DDEBUG -std=c++20 -fdiagnostics-color=always
 # CCOPT := -O3 -std=c++20 -fdiagnostics-color=always
 
+all:		nightmare bootstrap.x
+
 nightmare:	cpu.o object.o os.o
 		g++ ${CCOPT} -o $@ $^ -lncursesw
 

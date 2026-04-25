@@ -5,11 +5,12 @@ _STACK		seg	0
 _DATA		seg	1,@004
 		org	0
 prompt		db	"# ",0
-what		db	"nforth.x",0
+crlf		db	13,10,0
 
 _BSS		seg	2,@006
 		org	0
 ibuf		ds	80
+pad		ds	80
 
 _TEXT		seg	3,@001
 		start	_ini
@@ -68,16 +69,49 @@ ex_dell		tst	d6
 		bsr	ex_back
 		bra	ex_dell
 ex_cr		clr	(a2,d6).b
-		rts
+.1		rts
 
-
-_ini		mov	#6,d0
+puts		mov	(a0)+.b,d1
+		beq	.1b
+		mov	#4,d0
 		trap	#15
+		bra	puts
+
+eol		lea	crlf,a0
+		bra	puts
+
+_ini		lea	prompt,a0
+		bsr	puts
+		bsr	readln
+		bsr	eol
+		trap	#14
+
+		lea	ibuf,a2
+		lea	pad,a1
+.1		mov	(a2)+.b,d0
+		beq	_ini
+		cmp	#$20,d0
+		beq	.1b
+.2		mov	d0,(a1)+.b
+		mov	(a2)+.b,d0
+		beq	.1f
+		cmp	#$20,d0
+		bne	.2b
+.1		mov	#'.,d0
+		mov	d0,(a1)+.b
+		mov	#'x,d0
+		mov	d0,(a1)+.b
+		clr	(a1)+.b
+
+		; we'd be parsing args here
+
+		mov	#6,d0
+		trap	#15		    ; vfork()
 		tst	d0
 		beq	.1f
 		stop
 
-.1		lea	what,a0
+.1		lea	pad,a0
 		mov	#2,d0
-		trap	#15
-
+		trap	#15		    ; exec()
+		stop
