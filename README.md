@@ -41,9 +41,14 @@ of a conversation about portability.  :-)
 # Building
 
 Ironically(?) neither the VM nor its associated tools are very portable:  they expect
-a POSIX environment with a C++20 compiler (the Makefiles use `g++` by default).  That said,
-most of the dependencies on the environment are _fairly_ isolated and it shouldn't be
-too hard to adapt.
+a POSIX environment with a pretty recent C++20 compiler (gcc 14 is known to work and
+is what the Makefile expects).  There is one notable dependency on Linux in `os.cc`
+where the `Nightmare::open()` function relies on the Linux-specific `openat2()` system
+call for security, but this could be replaced at the cost of less safety or more
+complexity.
+
+That said, all of the dependencies on the environment are _fairly_ isolated and it
+shouldn't be too hard to adapt.
 
 The assembler requires [RE-flex](https://github.com/Genivia/RE-flex) and `libutf8proc` for
 proper UTF-8 support.  The former can be built easily from its repo and the latter is
