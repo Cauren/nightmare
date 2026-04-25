@@ -32,8 +32,7 @@ u_vec_break	ds	6
 context		da	0
 		da	0		; scratch
 
-version		db	27,'H,27,'J
-		db	"Nightmare bootstrap 0.1",13,10,10,0
+version		db	"Nightmare bootstrap 0.1",13,10,10,0
 init_fname	db	"init.x",0
 
 kernel_stack	ds	256 * 6
@@ -72,44 +71,24 @@ trap0_vec	tst	d0
 
 reset_vec	lea	kernel_stack,a7
 		mov	#4*1024,d1
-		mov	#0,d0
-		trap	#15		; kmalloc
-		lea	context,a1
+
+		mov	#6,d0
+		trap	#15		; faux-fork()
+
+		lea	_root:context,a1
 		sta	a0,(a1)
 		lea	(a0),a6
 		ssma	(2,a1)
 		mov	#num_segs,d0
 		ssml	d0
-		lsl	#2,d0
-.1		clr	(a0)+
-		dec	d0
-		bne	.1b
 
-		* initialize segmap for init process
-		* at this point a6 points to the segmap
-
-		* SEG 4: uarea
-		lea	(16*4,a6),a0   ; seg 4
-		mov	(2,a1),d0
-		mov	d0,(a0)
-		mov	#4*1024,d0
-		mov	d0,(4,a0)
-		mov	#@16,d0		; srw-
-		mov	d0,(8,a0).w
-
-		* SEG 0: ustack
-		mov	#8*1024,d1
-		mov	#0,d0
+		lea	version,a2
+.1		mov	(a2)+.b,d1
+		beq	.2f
+		mov	#4,d0
 		trap	#15
-		sta	a0,d0
-		mov	d0,(a6)
-		mov	d1,(4,a6)
-		mov	#@06,d0		; -rw-
-		mov	d0,(8,a6).w
-
-		lea	version,a0
-		mov	#3,d0
-		trap	#15
+		bra	.1b
+.2		nop
 
 		* load init.x userspace
 		lea	init_fname,a0
@@ -124,9 +103,7 @@ reset_vec	lea	kernel_stack,a7
 		clr	(a7)+
 		clr	(a7)+.w		; SSP 0:0
 		clr	(a7)+
-		mov	#3,d0		; PC 3:0
-		mov	d0,(a7)+.w
-		clr	(a7)+
+		sta	a0,(a7)+
 		rte
 
 uspace_vec	tst	(a0).w

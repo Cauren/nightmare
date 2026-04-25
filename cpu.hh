@@ -198,7 +198,12 @@ namespace Nightmare {
 
 	    bool			apply(Object&, bool super=false);
 	    bool			reset(void);
+
 	    void			invalidate(void);
+	    void			freesegs(bool everything=false);
+	    Segment&			mmap(uint_t segid, uword_t segno);
+	    void			munmap(uword_t segno);
+
 	    void			trap(byte_t num, const AReg& t);
 	    void			run(void);
 	    void			oscall(void);

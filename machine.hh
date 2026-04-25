@@ -203,6 +203,7 @@ namespace Nightmare {
 	public:
 	    byte_t*		mem;
 	    size_t		mem_alloc;
+	    int			fs_root;
 
 	    std::vector<CPU*>	cpus;				// really not planning on multiprocessing but meh  :-)
 
@@ -212,6 +213,8 @@ namespace Nightmare {
 	public:
 	    uint_t		kmalloc(uint_t bytes);
 	    bool		kfree(uint_t addr);
+	    uint_t		salloc(uint_t bytes);
+	    void		sfree(uint_t segid);
 
 	    void		output(byte_t ch);
 	    byte_t		input(void);
