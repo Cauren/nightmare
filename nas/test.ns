@@ -41,7 +41,9 @@ seg_free	dw	0
 reset_vec	db	1,2,"three",4,5,6,7
 		mov	#12,d0
 		mov	#@1000,d1
-		mov	#symbol.w,d2
+		link	#12,a6
+		link	d0,a6
+		link	#1012,a6
 		mov	d3,segmap
 		jsr	lib:function
 symbol		equ	.-reset_vec
@@ -62,4 +64,5 @@ l2		sub	(a3)+.b,d2
 		trap	#2
 		movm	d0,d1,d2,d3,a5,a6,ccr,(a7)+
 		movm	trapmap,a0,a1
+		unlk	a6
 		bra	>reset_vec

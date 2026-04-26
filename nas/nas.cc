@@ -1158,6 +1158,7 @@ struct i_EAR: public i_ea_reg {
 	{ "LSR",	0750000 },
 	{ "ASL",	0760000 },
 	{ "LSL",	0770000 },
+	{ "LINK",	0200400 },
 	{ "LEA",	0220600 },
 	{ "LDA",	0220500 },
 	{ "LDS",	0220400 },
@@ -1176,7 +1177,8 @@ struct i_EAR: public i_ea_reg {
 	    if(reg>7)
 		return src.err(src.operands[regdest? 1: 0], "{} requires a data register", src.op.str());
 	}
-	if(a.ea(src.operands[regdest? 0: 1], ea, src, reg>7))
+	bool unsized = (bits>>12) > 041;
+	if(a.ea(src.operands[regdest? 0: 1], ea, src, unsized))
 	    return true;
 
 	if(reg<8 && !regdest)
@@ -1245,6 +1247,33 @@ struct i_ADDR: public i_one_ea {
 	return false;
     };
 };
+
+struct i_AREG: public Instruction {
+    inline static Opcode::List<i_AREG> opcodes = {
+	{ "UNLK",	0600000 },
+    };
+
+    i_AREG(SourceLine& sl, uint32_t b): Instruction(sl, b) { };
+
+    bool pass1(Assembly& a)
+    {
+	if(needs(1))
+	    return true;
+	if(src.operands[0]!=Node::Register || src.operands[0].val()<8 || src.operands[0].val()>14)
+	    return src.err(src.operands[0], "{} requires an address register (a0..a6)", src.op.str());
+
+	ilen = 2;
+	return false;
+    };
+
+    bool pass2(Assembly& a)
+    {
+	word(bits | (src.operands[0].val()&07));
+	return false;
+    };
+
+};
+
 
 struct i_REL: public Instruction {
     inline static Opcode::List<i_REL> opcodes = {

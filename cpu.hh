@@ -289,6 +289,8 @@ eam
 | 1 |         op        |     dr    | d |  eam  |  ea.type  |   ea.reg  |	OP ea,dr  dr,ea
 
 | 0   1   0   0   0 |      op       | 0 |  eam  |  ea.type  |   ea.reg  |	OP ea
+| 0   1   0   0   0   0 |     ar    | 1 |  eam  |  ea.type  |   ea.reg  |	LINK ea,ar
+| 0   1   0   0   0   1 |           | 1 |  eam  |  ea.type  |   ea.reg  |	-- rfu --
 | 0   1   0   0   1   0 |     ar    | 0   0   0 |  ea.type  |   ea.reg  |	STS ar,ea
 | 0   1   0   0   1   0 |     ar    | 1   0   0 |  ea.type  |   ea.reg  |	LDS ea,ar
 | 0   1   0   0   1   0 |     ar    | 0   0   1 |  ea.type  |   ea.reg  |	STA ar,ea
@@ -302,15 +304,16 @@ eam
 | 0   1   1   0   0   0   0   0   1   0   0   1 |  ea.type  |   ea.reg  |	SSML ea
 | 0   1   1   0   0   0   0   0   1   0   1   0 |  ea.type  |   ea.reg  |	PEA ea
 
-| 0   0   0   0   0 |      xx       |                 r9                |	bxx r9
-| 0   0   0   0   1 |      xx       |                 r9		|	bxx r27
-| 0   0   0   1   0   0   0   0   1 |                 i9		|	rts #unwind9
-| 0   0   0   1   0   0   0   1   0 |                 i9		|	rte #unwind9
-| 0   0   0   1   0   0   0   1   1 |                 i9		|	trap #n
+| 0   0   0   0   0 |      xx       |                 r9                |	Bxx r9
+| 0   0   0   0   1 |      xx       |                 r9		|	Bxx r27
+| 0   0   0   1   0   0   0   0   1 |                 i9		|	RTS #unwind9
+| 0   0   0   1   0   0   0   1   0 |                 i9		|	RTE #unwind9
+| 0   0   0   1   0   0   0   1   1 |                 i9		|	TRAP #n
+| 0   0   0   1   1   0   0   0   0   0   0   0   0   0   0 |    an     |	UNLK an
 
-| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   0   0 |	nop
-| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   0   1 |	stop
-| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   1   0 |	bkpt
+| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   0   0 |	NOP
+| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   0   1 |	STOP
+| 0   0   1   1   1   1   1   1   1   0   0   0   0   0   0   0   1   0 |	BKPT
 
 TODO:	LINK/UNLK?
 	MULS/MULU

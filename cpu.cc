@@ -314,7 +314,7 @@ void CPU::run(void)
 	    // bit 17 or 16 set means there are EA fields on the opcode
 
 	    eamode = Indirect;
-	    if(opcode == "1"_m || opcode == "010'00x'xxx'0"_m) // those have eam field
+	    if(opcode == "1"_m || opcode == "010'00x"_m) // those have eam field
 		easz = (opcode>>6) & 3;
 
 	    switch(easz) {
@@ -733,6 +733,24 @@ void CPU::run(void)
 	      default:
 		throw Fault{ eINVAL, pc };
 	    }
+	} else if(opcode == "010'000'xxx'1xx"_m) {		// LINK ea,An
+	    int lreg = (opcode>>9) & 007;
+	    ea_read();
+	    Addr tos = addr(a[7]);
+	    tos.writes(6);
+	    tos[0].uw(a[lreg].seg);
+	    tos[2].ul(a[lreg].addr);
+	    a[7].addr += 6;
+	    a[lreg] = a[7];
+	    a[7].addr += sinput;
+	} else if(opcode == "000'110'000'000'000'xxx"_m) {	// UNLK An
+	    int lreg = opcode & 007;
+	    a[7] = a[lreg];
+	    a[7].addr -= 6;
+	    Addr tos = addr(a[7]);
+	    tos.reads(6);
+	    a[lreg].seg = tos[0].uw();
+	    a[lreg].addr = tos[2].ul();
 	} else if(opcode == "010'010'xxx'000"_m) {		// STS An,EA
 	    ea_readjust(2);
 	    eaddr.writes(2);

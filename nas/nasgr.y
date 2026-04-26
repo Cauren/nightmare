@@ -183,6 +183,7 @@ operands		: mem_ea ',' DREG				{ $$ = Ml(List, $1, $3); }
 			| DREG ',' mem_ea				{ $$ = Ml(List, $1, $3); }
 			| DREG ',' mem_ea SIZE				{ $$ = Ml(List, $1, $3.add($4)); }
 			| mem_ea ',' AREG				{ $$ = Ml(List, $1, $3); }
+			| immed ',' AREG				{ $$ = Ml(List, $1, $3); }
 			| AREG ',' mem_ea				{ $$ = Ml(List, $1, $3); } 
 			| DREG ',' AREG					{ $$ = Ml(List, $1, $3); } 
 			| AREG ',' DREG					{ $$ = Ml(List, $1, $3); } 
@@ -193,6 +194,7 @@ operands		: mem_ea ',' DREG				{ $$ = Ml(List, $1, $3); }
 			| mem_ea ',' reglist				{ $$ = $3.prefix($1); }
 			| '>' absolute					{ $$ = $2.add(Mi(Size, 3)); }
 			| '<' absolute					{ $$ = $2.add(Mi(Size, 1)); }
+			| AREG						{ $$ = Ml(List, $1); }
 			| %empty					{ $$ = nullptr; }
 			;
 
